@@ -1,6 +1,6 @@
 table! {
-    refs (base_cid_id, referenced_base32_cidv1) {
-        base_cid_id -> Int8,
+    refs (base_cid_id, referenced_base32_cidv1, name) {
+        base_cid_id -> Int4,
         referenced_base32_cidv1 -> Text,
         name -> Text,
         size -> Int8,
@@ -11,7 +11,7 @@ table! {
     resolved_cids (id) {
         id -> Int4,
         base32_cidv1 -> Text,
-        type_id -> Int8,
+        type_id -> Int4,
         cumulative_size -> Int8,
         block_size -> Int8,
         links_size -> Int8,

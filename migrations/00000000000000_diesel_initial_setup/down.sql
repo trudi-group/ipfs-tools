@@ -2,6 +2,8 @@
 -- and other internal bookkeeping. This file is safe to edit, any future
 -- changes will be added to existing projects as new migrations.
 
+DROP INDEX IF EXISTS refs_referenced_cid;
+DROP INDEX IF EXISTS refs_based_cid_id;
 DROP TABLE IF EXISTS refs;
 DROP TABLE IF EXISTS resolved_cids;
 DROP TABLE IF EXISTS types;
