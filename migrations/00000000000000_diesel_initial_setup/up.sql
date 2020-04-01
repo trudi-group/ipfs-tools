@@ -10,7 +10,7 @@ CREATE TABLE types(
 CREATE TABLE resolved_cids(
 	id SERIAL NOT NULL PRIMARY KEY,
 	base32_cidv1 TEXT NOT NULL UNIQUE,
-	type_id BIGINT NOT NULL REFERENCES types(type_id),
+	type_id INT NOT NULL REFERENCES types(type_id),
 	cumulative_size BIGINT NOT NULL,
 	block_size BIGINT NOT NULL,
 	links_size BIGINT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE resolved_cids(
 );
 
 CREATE TABLE refs(
-	base_cid_id BIGINT NOT NULL REFERENCES resolved_cids(id),
+	base_cid_id INT NOT NULL REFERENCES resolved_cids(id),
 	referenced_base32_cidv1 TEXT NOT NULL,
 	name TEXT NOT NULL,
 	size BIGINT NOT NULL,
