@@ -41,6 +41,16 @@ table! {
 }
 
 table! {
+    unixfs_file_heuristics (block_id) {
+        block_id -> Int4,
+        mime_type -> Nullable<Text>,
+        encoding -> Nullable<Text>,
+        language -> Nullable<Text>,
+        chardet_confidence -> Nullable<Float4>,
+    }
+}
+
+table! {
     unixfs_links (parent_block_id, referenced_base32_cidv1, name) {
         parent_block_id -> Int4,
         referenced_base32_cidv1 -> Text,
@@ -61,6 +71,7 @@ joinable!(failed_blocks -> blocks (block_id));
 joinable!(failed_blocks -> errors (error_id));
 joinable!(unixfs_blocks -> blocks (block_id));
 joinable!(unixfs_blocks -> unixfs_types (unixfs_type_id));
+joinable!(unixfs_file_heuristics -> unixfs_blocks (block_id));
 joinable!(unixfs_links -> unixfs_blocks (parent_block_id));
 
 allow_tables_to_appear_in_same_query!(
@@ -69,6 +80,7 @@ allow_tables_to_appear_in_same_query!(
     errors,
     failed_blocks,
     unixfs_blocks,
+    unixfs_file_heuristics,
     unixfs_links,
     unixfs_types,
 );
