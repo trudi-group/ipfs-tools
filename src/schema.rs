@@ -31,8 +31,4 @@ table! {
 joinable!(refs -> resolved_cids (base_cid_id));
 joinable!(resolved_cids -> types (type_id));
 
-allow_tables_to_appear_in_same_query!(
-    refs,
-    resolved_cids,
-    types,
-);
+allow_tables_to_appear_in_same_query!(refs, resolved_cids, types,);
