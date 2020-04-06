@@ -158,18 +158,26 @@ pub struct NewUnixFSLink<'a> {
 #[primary_key(block_id)]
 pub struct UnixFSFileHeuristics {
     pub block_id: i32,
-    pub mime_type: Option<String>,
-    pub encoding: Option<String>,
-    pub language: Option<String>,
+    pub tree_mime_mime_type: Option<String>,
+    pub chardet_encoding: Option<String>,
+    pub chardet_language: Option<String>,
     pub chardet_confidence: Option<f32>,
+    pub chardetng_encoding: Option<String>,
+    pub whatlang_language: Option<String>,
+    pub whatlang_script: Option<String>,
+    pub whatlang_confidence: Option<f64>,
 }
 
 #[derive(Insertable)]
 #[table_name = "unixfs_file_heuristics"]
 pub struct NewUnixFSFileHeuristics<'a> {
     pub block_id: &'a i32,
-    pub mime_type: Option<&'a str>,
-    pub encoding: Option<&'a str>,
-    pub language: Option<&'a str>,
+    pub tree_mime_mime_type: Option<&'a str>,
+    pub chardet_encoding: Option<&'a str>,
+    pub chardet_language: Option<&'a str>,
     pub chardet_confidence: Option<&'a f32>,
+    pub chardetng_encoding: Option<&'a str>,
+    pub whatlang_language: Option<&'a str>,
+    pub whatlang_script: Option<&'a str>,
+    pub whatlang_confidence: Option<&'a f64>,
 }
