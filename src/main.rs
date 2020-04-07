@@ -83,9 +83,24 @@ async fn main() -> Result<()> {
             match node.get_Type() {
                 unixfs::Data_DataType::Directory => &*UNIXFS_TYPE_DIRECTORY,
                 unixfs::Data_DataType::File => &*UNIXFS_TYPE_FILE,
-                unixfs::Data_DataType::HAMTShard => &*UNIXFS_TYPE_HAMT_SHARD,
-                unixfs::Data_DataType::Metadata => &*UNIXFS_TYPE_METADATA,
-                unixfs::Data_DataType::Symlink => &*UNIXFS_TYPE_SYMLINK,
+                unixfs::Data_DataType::HAMTShard => {
+                    // We skip these for now because we need to decode them properly to get actual link names.
+                    debug!("skipping HAMTShard block");
+                    return Ok(());
+                    //&*UNIXFS_TYPE_HAMT_SHARD
+                }
+                unixfs::Data_DataType::Metadata => {
+                    // We skip these for now because I have no idea how to treat them.
+                    debug!("skipping metadata block");
+                    return Ok(());
+                    //&*UNIXFS_TYPE_METADATA
+                }
+                unixfs::Data_DataType::Symlink => {
+                    // We skip these for now because, again, I have no idea how to treat them.
+                    debug!("skipping symlink block");
+                    return Ok(());
+                    //&*UNIXFS_TYPE_SYMLINK
+                }
                 unixfs::Data_DataType::Raw => &*UNIXFS_TYPE_RAW, // This is a bit strange and I think it never actually happens, but whatever.
             }
         }
