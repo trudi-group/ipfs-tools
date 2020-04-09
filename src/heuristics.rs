@@ -1,6 +1,7 @@
 use crate::{ipfs, Result};
 use chardetng::EncodingDetector;
 use failure::ResultExt;
+use reqwest::Url;
 
 #[derive(Debug, Clone)]
 pub(crate) struct FileHeuristics {
@@ -17,8 +18,12 @@ pub(crate) struct ChardetHeuristics {
     pub confidence: f32,
 }
 
-pub(crate) async fn get_file_heuristics(cid_string: &str) -> Result<FileHeuristics> {
-    let data = ipfs::query_ipfs_for_cat(cid_string, 10 * 1024)
+pub(crate) async fn get_file_heuristics(
+    ipfs_api_base: &Url,
+    resolve_timeout: u16,
+    cid_string: &str,
+) -> Result<FileHeuristics> {
+    let data = ipfs::query_ipfs_for_cat(ipfs_api_base, resolve_timeout, cid_string, 10 * 1024)
         .await
         .context("unable to /cat file")?;
 

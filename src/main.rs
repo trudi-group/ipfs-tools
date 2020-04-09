@@ -19,7 +19,8 @@ mod logging;
 use crate::model::*;
 use cid::{Cid, Codec};
 use diesel::Connection;
-use failure::{err_msg, Error, ResultExt};
+use failure::{err_msg, Error, Fail, ResultExt};
+use reqwest::Url;
 use std::convert::TryFrom;
 use std::env;
 
@@ -32,6 +33,21 @@ enum ResolveError {
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::set_up_logging(false)?;
+
+    dotenv::dotenv().ok();
+    let ipfs_resolver_api_url =
+        env::var("IPFS_RESOLVER_API_URL").context("IPFS_RESOLVER_API_URL must be set")?;
+    let ipfs_api_base = Url::parse(&ipfs_resolver_api_url).context("invalid IPFS API URL")?;
+    debug!("using IPFS API base {}",ipfs_api_base);
+
+    let resolve_timeout: u16 = env::var("IPFS_RESOLVER_TIMEOUT_SECS")
+        .unwrap_or_else(|_| {
+            debug!("IPFS_RESOLVER_TIMEOUT_SECS not provided, using 30");
+            "30".to_string()
+        })
+        .parse::<u16>()
+        .context("invalid timeout")?;
+    debug!("using IPFS API timeout {}s",resolve_timeout);
 
     let arg_cid = get_v1_cid_from_args().context("unable to parse CID from args")?;
 
@@ -62,9 +78,10 @@ async fn main() -> Result<()> {
     }
 
     debug!("querying IPFS for metadata...");
-    let (block_stat, files_stat, object_stat, links) = ipfs::query_ipfs_for_metadata(&cid_string)
-        .await
-        .context("unable to query IPFS")?;
+    let (block_stat, files_stat, object_stat, links) =
+        ipfs::query_ipfs_for_metadata(&ipfs_api_base, resolve_timeout, &cid_string)
+            .await
+            .context("unable to query IPFS")?;
     debug!(
         "block_stat: {:?}, files_stat: {:?}, object_stat: {:?}, refs: {:?}",
         block_stat, files_stat, object_stat, links
@@ -77,7 +94,9 @@ async fn main() -> Result<()> {
     debug!("determining UnixFSv1 type...");
     let typ: &UnixFSType = match arg_cid.codec() {
         Codec::DagProtobuf => {
-            let object_data = ipfs::query_ipfs_for_object_data(&cid_string).await?;
+            let object_data =
+                ipfs::query_ipfs_for_object_data(&ipfs_api_base, resolve_timeout, &cid_string)
+                    .await?;
             let node: unixfs::Data =
                 protobuf::parse_from_bytes(&object_data).context("unable to parse protobuf")?;
             match node.get_Type() {
@@ -111,7 +130,8 @@ async fn main() -> Result<()> {
 
     // Get first 32 bytes to save for later.
     debug!("getting raw block data...");
-    let mut raw_block = ipfs::query_ipfs_for_block_get(&cid_string).await?;
+    let mut raw_block =
+        ipfs::query_ipfs_for_block_get(&ipfs_api_base, resolve_timeout, &cid_string).await?;
     raw_block.truncate(32);
 
     let heur = if typ.id != UNIXFS_TYPE_RAW.id && typ.id != UNIXFS_TYPE_FILE.id {
@@ -119,7 +139,8 @@ async fn main() -> Result<()> {
         None
     } else {
         debug!("running file heuristics...");
-        let h = heuristics::get_file_heuristics(&cid_string).await?;
+        let h =
+            heuristics::get_file_heuristics(&ipfs_api_base, resolve_timeout, &cid_string).await?;
         debug!("got heuristics {:?}", h);
         Some(h)
     };

@@ -4,49 +4,84 @@ use failure::ResultExt;
 use ipfs_api::response;
 use reqwest::Url;
 
-pub(crate) async fn query_ipfs_for_cat(cid_string: &str, length: u64) -> Result<Vec<u8>> {
-    let base = "http://localhost:5002/api/v0";
+pub(crate) async fn query_ipfs_for_cat(
+    ipfs_base: &Url,
+    resolve_timeout: u16,
+    cid_string: &str,
+    length: u64,
+) -> Result<Vec<u8>> {
     let ipfs_prefixed_cid = format!("/ipfs/{}", cid_string);
-    let cat_url = match length {
-        0 => Url::parse(&format!(
-            "{}/cat?arg={}&timeout=30s",
-            base, ipfs_prefixed_cid
-        )),
-        _ => Url::parse(&format!(
-            "{}/cat?arg={}&timeout=30s&length={}",
-            base, ipfs_prefixed_cid, length
-        )),
-    }
-    .expect("invalid URL...");
+    let mut url = ipfs_base.clone();
+    url.set_path("api/v0/cat");
 
-    query_ipfs_api_raw(cat_url).await
+    let query = match length {
+        0 => format!(
+            "arg={}&timeout={}s",
+            &percent_encoding::utf8_percent_encode(
+                &ipfs_prefixed_cid,
+                percent_encoding::NON_ALPHANUMERIC
+            ),
+            resolve_timeout
+        ),
+        _ => format!(
+            "arg={}&timeout={}s&length={}",
+            &percent_encoding::utf8_percent_encode(
+                &ipfs_prefixed_cid,
+                percent_encoding::NON_ALPHANUMERIC
+            ),
+            resolve_timeout,
+            length
+        ),
+    };
+
+    url.set_query(Some(&query));
+
+    query_ipfs_api_raw(url).await
 }
 
-pub(crate) async fn query_ipfs_for_block_get(cid_string: &str) -> Result<Vec<u8>> {
-    let base = "http://localhost:5002/api/v0";
+pub(crate) async fn query_ipfs_for_block_get(
+    ipfs_base: &Url,
+    resolve_timeout: u16,
+    cid_string: &str,
+) -> Result<Vec<u8>> {
+    let mut url = ipfs_base.clone();
+    url.set_path("api/v0/block/get");
     let ipfs_prefixed_cid = format!("/ipfs/{}", cid_string);
-    let block_get_url = Url::parse(&format!(
-        "{}/block/get?arg={}&timeout=30s",
-        base, ipfs_prefixed_cid
-    ))
-    .expect("invalid URL...");
+    url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(
+            &ipfs_prefixed_cid,
+            percent_encoding::NON_ALPHANUMERIC,
+        ),
+        resolve_timeout
+    )));
 
-    query_ipfs_api_raw(block_get_url).await
+    query_ipfs_api_raw(url).await
 }
 
-pub(crate) async fn query_ipfs_for_object_data(cid_string: &str) -> Result<Vec<u8>> {
-    let base = "http://localhost:5002/api/v0";
+pub(crate) async fn query_ipfs_for_object_data(
+    ipfs_base: &Url,
+    resolve_timeout: u16,
+    cid_string: &str,
+) -> Result<Vec<u8>> {
+    let mut url = ipfs_base.clone();
+    url.set_path("api/v0/object/data");
     let ipfs_prefixed_cid = format!("/ipfs/{}", cid_string);
-    let object_data_url = Url::parse(&format!(
-        "{}/object/data?arg={}&timeout=30s",
-        base, ipfs_prefixed_cid
-    ))
-    .expect("invalid URL...");
+    url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(
+            &ipfs_prefixed_cid,
+            percent_encoding::NON_ALPHANUMERIC,
+        ),
+        resolve_timeout
+    )));
 
-    query_ipfs_api_raw(object_data_url).await
+    query_ipfs_api_raw(url).await
 }
 
 pub(crate) async fn query_ipfs_for_metadata(
+    ipfs_base: &Url,
+    resolve_timeout: u16,
     cid_string: &str,
 ) -> Result<(
     response::BlockStatResponse,
@@ -54,28 +89,48 @@ pub(crate) async fn query_ipfs_for_metadata(
     response::ObjectStatResponse,
     response::ObjectLinksResponse,
 )> {
-    let base = "http://localhost:5002/api/v0";
     let ipfs_prefixed_cid = format!("/ipfs/{}", cid_string);
-    let block_stat_url = Url::parse(&format!(
-        "{}/block/stat?arg={}&timeout=30s",
-        base, cid_string
-    ))
-    .expect("invalid URL...");
-    let files_stat_url = Url::parse(&format!(
-        "{}/files/stat?arg={}&timeout=30s",
-        base, ipfs_prefixed_cid
-    ))
-    .expect("invalid URL...");
-    let object_stat_url = Url::parse(&format!(
-        "{}/object/stat?arg={}&timeout=30s",
-        base, ipfs_prefixed_cid
-    ))
-    .expect("invalid URL...");
-    let object_links_url = Url::parse(&format!(
-        "{}/object/links?arg={}&timeout=30s",
-        base, ipfs_prefixed_cid
-    ))
-    .expect("invalid URL...");
+
+    let mut block_stat_url = ipfs_base.clone();
+    block_stat_url.set_path("api/v0/block/stat");
+    block_stat_url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(cid_string, percent_encoding::NON_ALPHANUMERIC),
+        resolve_timeout
+    )));
+
+    let mut files_stat_url = ipfs_base.clone();
+    files_stat_url.set_path("api/v0/files/stat");
+    files_stat_url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(
+            &ipfs_prefixed_cid,
+            percent_encoding::NON_ALPHANUMERIC,
+        ),
+        resolve_timeout
+    )));
+
+    let mut object_stat_url = ipfs_base.clone();
+    object_stat_url.set_path("api/v0/object/stat");
+    object_stat_url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(
+            &ipfs_prefixed_cid,
+            percent_encoding::NON_ALPHANUMERIC,
+        ),
+        resolve_timeout
+    )));
+
+    let mut object_links_url = ipfs_base.clone();
+    object_links_url.set_path("api/v0/object/links");
+    object_links_url.set_query(Some(&format!(
+        "arg={}&timeout={}s",
+        &percent_encoding::utf8_percent_encode(
+            &ipfs_prefixed_cid,
+            percent_encoding::NON_ALPHANUMERIC,
+        ),
+        resolve_timeout
+    )));
 
     let block_stat: response::BlockStatResponse = query_ipfs_api(block_stat_url)
         .await
@@ -108,7 +163,10 @@ pub(crate) async fn query_ipfs_for_metadata(
 }
 
 async fn query_ipfs_api_raw(url: Url) -> Result<Vec<u8>> {
-    let resp = reqwest::get(url)
+    let c = reqwest::Client::new();
+    let resp = c
+        .post(url)
+        .send()
         .await
         .context("unable to query IPFS API")?;
 

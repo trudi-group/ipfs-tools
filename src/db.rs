@@ -257,8 +257,6 @@ fn create_unixfs_file_heuristics<'a>(
 }
 
 pub(crate) fn establish_connection() -> Result<PgConnection> {
-    dotenv::dotenv().ok();
-
     let database_url = env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
     let conn = PgConnection::establish(&database_url)
         .context(format!("error connecting to {}", database_url))?;
