@@ -1,8 +1,25 @@
-use crate::Result;
 use failure::err_msg;
-use failure::ResultExt;
+use failure::{Error, Fail};
 use ipfs_api::response;
 use reqwest::Url;
+
+#[derive(Fail, Debug)]
+pub(crate) enum ResolveError {
+    #[fail(display = "context deadline exceeded")]
+    ContextDeadlineExceeded,
+    #[fail(display = "reqwest unable to perform request: '{}'", _0)]
+    Request(reqwest::Error),
+    #[fail(display = "reqwest unable to read body: '{}'", _0)]
+    UnableToReadBody(reqwest::Error),
+    #[fail(display = "invalid UTF-8 in response")]
+    InvalidUTF8,
+    #[fail(display = "IPFS API error: '{}'", _0)]
+    Api(ipfs_api::response::ApiError),
+    #[fail(display = "general failure: '{}'", _0)]
+    Other(Error),
+}
+
+pub(crate) type Result<T> = std::result::Result<T, ResolveError>;
 
 pub(crate) async fn query_ipfs_for_cat(
     ipfs_base: &Url,
@@ -132,15 +149,12 @@ pub(crate) async fn query_ipfs_for_metadata(
         resolve_timeout
     )));
 
-    let block_stat: response::BlockStatResponse = query_ipfs_api(block_stat_url)
-        .await
-        .context("unable to query IPFS API /block/stat")?;
-    let files_stat: response::FilesStatResponse = query_ipfs_api(files_stat_url)
-        .await
-        .context("unable to query IPFS API /files/stat")?;
-    let object_stat: response::ObjectStatResponse = query_ipfs_api(object_stat_url)
-        .await
-        .context("unable to query IPFS API /object/stat")?;
+    let block_stat: response::BlockStatResponse = query_ipfs_api(block_stat_url).await?;
+    //.context("unable to query IPFS API /block/stat")?;
+    let files_stat: response::FilesStatResponse = query_ipfs_api(files_stat_url).await?;
+    //.context("unable to query IPFS API /files/stat")?;
+    let object_stat: response::ObjectStatResponse = query_ipfs_api(object_stat_url).await?;
+    //.context("unable to query IPFS API /object/stat")?;
 
     // The IPFS HTTP API leaves out the "Links" field if there are no refs, which in turn causes
     // JSON parsing to fail. So if we have no links, just return a dummy response...
@@ -155,9 +169,8 @@ pub(crate) async fn query_ipfs_for_metadata(
             },
         ));
     }
-    let refs: response::ObjectLinksResponse = query_ipfs_api(object_links_url)
-        .await
-        .context("unable to query IPFS API /object/links")?;
+    let refs: response::ObjectLinksResponse = query_ipfs_api(object_links_url).await?;
+    //.context("unable to query IPFS API /object/links")?;
 
     Ok((block_stat, files_stat, object_stat, refs))
 }
@@ -168,28 +181,40 @@ async fn query_ipfs_api_raw(url: Url) -> Result<Vec<u8>> {
         .post(url)
         .send()
         .await
-        .context("unable to query IPFS API")?;
+        .map_err(|e| ResolveError::Request(e))?;
 
     match resp.status() {
         hyper::StatusCode::OK => {
             // parse as T
-            let body = resp.bytes().await.context("unable to read body")?;
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| ResolveError::UnableToReadBody(e))?;
             Ok(body.to_vec())
         }
         _ => {
             // try to parse as IPFS error...
-            let body = resp.bytes().await.context("unable to read body")?;
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| ResolveError::UnableToReadBody(e))?;
             let err = serde_json::from_slice::<ipfs_api::response::ApiError>(&body);
             match err {
-                Ok(err) => Err(ipfs_api::response::Error::Api(err).into()),
+                Ok(err) => {
+                    if err.message == "context deadline exceeded" {
+                        Err(ResolveError::ContextDeadlineExceeded)
+                    } else {
+                        Err(ResolveError::Api(err))
+                    }
+                }
                 Err(_) => {
                     // just return the body I guess...
                     let err_text =
-                        String::from_utf8(body.to_vec()).context("response is invalid UTF8")?;
-                    Err(err_msg(format!(
+                        String::from_utf8(body.to_vec()).map_err(|_| ResolveError::InvalidUTF8)?;
+                    Err(ResolveError::Other(err_msg(format!(
                         "unable to parse IPFS API response: {}",
                         err_text
-                    )))
+                    ))))
                 }
             }
         }
@@ -209,15 +234,21 @@ where
             // try to parse as IPFS error instead...
             let err = serde_json::from_slice::<ipfs_api::response::ApiError>(&body);
             match err {
-                Ok(err) => Err(ipfs_api::response::Error::Api(err).into()),
+                Ok(err) => {
+                    if err.message == "context deadline exceeded" {
+                        Err(ResolveError::ContextDeadlineExceeded)
+                    } else {
+                        Err(ResolveError::Api(err))
+                    }
+                }
                 Err(_) => {
                     // just return the body I guess...
                     let err_text =
-                        String::from_utf8(body.to_vec()).context("response is invalid UTF8")?;
-                    Err(err_msg(format!(
+                        String::from_utf8(body.to_vec()).map_err(|_| ResolveError::InvalidUTF8)?;
+                    Err(ResolveError::Other(err_msg(format!(
                         "unable to parse IPFS API response: {}",
                         err_text
-                    )))
+                    ))))
                 }
             }
         }

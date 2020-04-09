@@ -77,8 +77,6 @@ pub struct Block {
     pub id: i32,
     pub base32_cidv1: String,
     pub codec_id: i32,
-    pub block_size: i32,
-    pub first_bytes: Vec<u8>,
 }
 
 #[derive(Insertable)]
@@ -86,30 +84,66 @@ pub struct Block {
 pub struct NewBlock<'a> {
     pub base32_cidv1: &'a str,
     pub codec_id: &'a i32,
+}
+
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[table_name = "block_stats"]
+#[belongs_to(Block, foreign_key = "block_id")]
+#[primary_key(block_id)]
+pub struct BlockStat {
+    pub block_id: i32,
+    pub block_size: i32,
+    pub first_bytes: Vec<u8>,
+}
+
+#[derive(Insertable)]
+#[table_name = "block_stats"]
+pub struct NewBlockStat<'a> {
+    pub block_id: &'a i32,
     pub block_size: &'a i32,
     pub first_bytes: &'a Vec<u8>,
 }
 
 #[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
-#[table_name = "failed_blocks"]
+#[table_name = "failed_resolves"]
 #[belongs_to(Block, foreign_key = "block_id")]
 #[belongs_to(BlockError, foreign_key = "error_id")]
-#[primary_key(block_id)]
-pub struct FailedBlock {
+#[primary_key(id)]
+pub struct FailedResolve {
     pub block_id: i32,
     pub error_id: i32,
+    pub ts: chrono::NaiveDateTime,
+    pub id: i32,
 }
 
 #[derive(Insertable)]
-#[table_name = "failed_blocks"]
-pub struct NewFailedBlock<'a> {
+#[table_name = "failed_resolves"]
+pub struct NewFailedResolve<'a> {
     pub block_id: &'a i32,
     pub error_id: &'a i32,
+    pub ts: &'a chrono::NaiveDateTime,
+}
+
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[table_name = "successful_resolves"]
+#[belongs_to(Block, foreign_key = "block_id")]
+#[primary_key(id)]
+pub struct SuccessfulResolve {
+    pub block_id: i32,
+    pub ts: chrono::NaiveDateTime,
+    pub id: i32,
+}
+
+#[derive(Insertable)]
+#[table_name = "successful_resolves"]
+pub struct NewSuccessfulResolve<'a> {
+    pub block_id: &'a i32,
+    pub ts: &'a chrono::NaiveDateTime,
 }
 
 #[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
 #[table_name = "unixfs_blocks"]
-#[belongs_to(Block, foreign_key = "block_id")]
+#[belongs_to(BlockStat, foreign_key = "block_id")]
 #[belongs_to(UnixFSType, foreign_key = "unixfs_type_id")]
 #[primary_key(block_id)]
 pub struct UnixFSBlock {

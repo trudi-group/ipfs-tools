@@ -11,7 +11,7 @@ failure = "0.1.7"
 log = "0.4.8"
 flexi_logger = "0.15.2"
 ipfs-api = "0.7.1"
-diesel = { version = "1.4.4", features = ["postgres"] }
+diesel = { version = "1.4.4", features = ["postgres","chrono"] }
 tokio = { version = "0.2.13", features = ["rt-threaded","macros"] }
 dotenv = "0.15.0"
 cid = "0.4.0"
@@ -27,6 +27,7 @@ protobuf = "2.12.0"
 whatlang = "0.7.3"
 chardetng = "0.1.6"
 percent-encoding = "2.1.0"
+chrono = "0.4.11"
 
 [build-dependencies]
 protobuf-codegen-pure = "2.3"

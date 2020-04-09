@@ -16,19 +16,17 @@ mod heuristics;
 mod ipfs;
 mod logging;
 
+use crate::ipfs::ResolveError;
 use crate::model::*;
+use chrono::Utc;
 use cid::{Cid, Codec};
-use diesel::Connection;
-use failure::{err_msg, Error, Fail, ResultExt};
+use diesel::{Connection, PgConnection};
+use failure::{err_msg, Error, ResultExt};
 use reqwest::Url;
 use std::convert::TryFrom;
 use std::env;
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
-
-enum ResolveError {
-    FailedToGetBlockContextDeadlineExceeded,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,7 +36,7 @@ async fn main() -> Result<()> {
     let ipfs_resolver_api_url =
         env::var("IPFS_RESOLVER_API_URL").context("IPFS_RESOLVER_API_URL must be set")?;
     let ipfs_api_base = Url::parse(&ipfs_resolver_api_url).context("invalid IPFS API URL")?;
-    debug!("using IPFS API base {}",ipfs_api_base);
+    debug!("using IPFS API base {}", ipfs_api_base);
 
     let resolve_timeout: u16 = env::var("IPFS_RESOLVER_TIMEOUT_SECS")
         .unwrap_or_else(|_| {
@@ -47,7 +45,7 @@ async fn main() -> Result<()> {
         })
         .parse::<u16>()
         .context("invalid timeout")?;
-    debug!("using IPFS API timeout {}s",resolve_timeout);
+    debug!("using IPFS API timeout {}s", resolve_timeout);
 
     let arg_cid = get_v1_cid_from_args().context("unable to parse CID from args")?;
 
@@ -79,9 +77,20 @@ async fn main() -> Result<()> {
 
     debug!("querying IPFS for metadata...");
     let (block_stat, files_stat, object_stat, links) =
-        ipfs::query_ipfs_for_metadata(&ipfs_api_base, resolve_timeout, &cid_string)
-            .await
-            .context("unable to query IPFS")?;
+        match ipfs::query_ipfs_for_metadata(&ipfs_api_base, resolve_timeout, &cid_string).await {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                debug!("unable to query IPFS: {:?}", e);
+                match e {
+                    ResolveError::ContextDeadlineExceeded => {
+                        debug!("deadline exceeded, will record this");
+                        return insert_timeout(&conn, &cid_string, &codec);
+                    }
+                    _ => Err(e),
+                }
+            }
+        }
+        .context("unable to query IPFS")?;
     debug!(
         "block_stat: {:?}, files_stat: {:?}, object_stat: {:?}, refs: {:?}",
         block_stat, files_stat, object_stat, links
@@ -148,7 +157,14 @@ async fn main() -> Result<()> {
     debug!("inserting...");
     conn.transaction(|| {
         debug!("inserting block");
-        let block = db::insert_block_into_db(&conn, cid_string, block_stat, codec.id, raw_block)?;
+        let block = db::insert_successful_block_into_db(
+            &conn,
+            cid_string,
+            codec.id,
+            block_stat,
+            raw_block,
+            Utc::now().naive_utc(),
+        )?;
         debug!("inserted block as {:?}", block);
 
         debug!("inserting UnixFS block...");
@@ -192,4 +208,24 @@ pub(crate) fn canonicalize_cid_from_str(cid: &str) -> Result<String> {
 fn canonicalize_cid(c: &Cid) -> String {
     let v1_cid = Cid::new_v1(c.codec(), c.hash().to_owned());
     multibase::encode(multibase::Base::Base32Lower, v1_cid.to_bytes())
+}
+
+fn insert_timeout(conn: &PgConnection, cid_string: &str, codec: &model::Codec) -> Result<()> {
+    conn.transaction::<_, Error, _>(|| {
+        debug!("inserting failed block");
+        let block = db::insert_failed_block_into_db(
+            &conn,
+            cid_string,
+            codec.id,
+            &*BLOCK_ERROR_FAILED_TO_GET_BLOCK_DEADLINE_EXCEEDED,
+            Utc::now().naive_utc(),
+        )?;
+        debug!("inserted block as {:?}", block);
+
+        Ok(())
+    })
+    .context("unable to insert")?;
+
+    debug!("done.");
+    Ok(())
 }

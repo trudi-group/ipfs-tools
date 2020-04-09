@@ -84,21 +84,37 @@ pub(crate) fn insert_file_heuristics(
     Ok(heuristics)
 }
 
-pub(crate) fn insert_block_into_db(
+pub(crate) fn insert_failed_block_into_db(
+    conn: &PgConnection,
+    cid_string: &str,
+    codec_id: i32,
+    err: &BlockError,
+    ts: chrono::NaiveDateTime,
+) -> Result<Block> {
+    let block = create_block(conn, cid_string, &codec_id).context("unable to insert block")?;
+
+    create_failed_resolve(conn, &block.id, &err.id, &ts)
+        .context("unable to insert successful resolve")?;
+
+    Ok(block)
+}
+
+pub(crate) fn insert_successful_block_into_db(
     conn: &PgConnection,
     cid_string: String,
-    block_stat: response::BlockStatResponse,
     codec_id: i32,
+    block_stat: response::BlockStatResponse,
     first_bytes: Vec<u8>,
+    ts: chrono::NaiveDateTime,
 ) -> Result<Block> {
-    let block = create_block(
-        conn,
-        cid_string.as_str(),
-        &codec_id,
-        &(block_stat.size as i32),
-        &first_bytes,
-    )
-    .context("unable to insert block")?;
+    let block =
+        create_block(conn, cid_string.as_str(), &codec_id).context("unable to insert block")?;
+
+    create_block_stat(conn, &block.id, &(block_stat.size as i32), &first_bytes)
+        .context("unable to insert block stat")?;
+
+    create_successful_resolve(conn, &block.id, &ts)
+        .context("unable to insert successful resolve")?;
 
     Ok(block)
 }
@@ -128,16 +144,12 @@ fn create_block<'a>(
     conn: &PgConnection,
     base32_cidv1: &'a str,
     codec_id: &'a i32,
-    block_size: &'a i32,
-    first_bytes: &'a Vec<u8>,
 ) -> Result<Block> {
     use crate::schema::blocks;
 
     let new_block = NewBlock {
         base32_cidv1,
         codec_id,
-        block_size,
-        first_bytes,
     };
 
     let inserted_block = diesel::insert_into(blocks::table)
@@ -149,22 +161,66 @@ fn create_block<'a>(
     Ok(inserted_block)
 }
 
-fn create_failed_block<'a>(
+fn create_block_stat<'a>(
     conn: &PgConnection,
     block_id: &'a i32,
-    error_id: &'a i32,
-) -> Result<FailedBlock> {
-    use crate::schema::failed_blocks;
+    block_size: &'a i32,
+    first_bytes: &'a Vec<u8>,
+) -> Result<BlockStat> {
+    use crate::schema::block_stats;
 
-    let new_block = NewFailedBlock { block_id, error_id };
+    let new_stat = NewBlockStat {
+        block_id,
+        block_size,
+        first_bytes,
+    };
 
-    let inserted_block = diesel::insert_into(failed_blocks::table)
-        .values(&new_block)
+    let inserted_stat = diesel::insert_into(block_stats::table)
+        .values(&new_stat)
         .on_conflict_do_nothing()
         .get_result(conn)
         .context("unable to insert")?;
 
-    Ok(inserted_block)
+    Ok(inserted_stat)
+}
+
+fn create_failed_resolve<'a>(
+    conn: &PgConnection,
+    block_id: &'a i32,
+    error_id: &'a i32,
+    ts: &'a chrono::NaiveDateTime,
+) -> Result<FailedResolve> {
+    use crate::schema::failed_resolves;
+
+    let failed_resolve = NewFailedResolve {
+        block_id,
+        error_id,
+        ts,
+    };
+
+    let inserted_resolve = diesel::insert_into(failed_resolves::table)
+        .values(&failed_resolve)
+        .get_result(conn)
+        .context("unable to insert")?;
+
+    Ok(inserted_resolve)
+}
+
+fn create_successful_resolve<'a>(
+    conn: &PgConnection,
+    block_id: &'a i32,
+    ts: &'a chrono::NaiveDateTime,
+) -> Result<SuccessfulResolve> {
+    use crate::schema::successful_resolves;
+
+    let successful_resolve = NewSuccessfulResolve { block_id, ts };
+
+    let inserted_resolve = diesel::insert_into(successful_resolves::table)
+        .values(&successful_resolve)
+        .get_result(conn)
+        .context("unable to insert")?;
+
+    Ok(inserted_resolve)
 }
 
 fn create_unixfs_block<'a>(
