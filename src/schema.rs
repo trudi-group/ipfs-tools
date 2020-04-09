@@ -29,17 +29,19 @@ table! {
 }
 
 table! {
-    failed_resolves (block_id) {
+    failed_resolves (id) {
         block_id -> Int4,
         error_id -> Int4,
         ts -> Timestamp,
+        id -> Int4,
     }
 }
 
 table! {
-    successful_resolves (block_id) {
+    successful_resolves (id) {
         block_id -> Int4,
         ts -> Timestamp,
+        id -> Int4,
     }
 }
 
