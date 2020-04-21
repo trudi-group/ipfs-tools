@@ -214,7 +214,6 @@ checksum = "80094f509cf8b5ae86a4966a39b3ff66cd7e2a3e594accec3743ff3fabeab5b2"
 dependencies = [
  "num-integer",
  "num-traits",
- "serde",
  "time",
 ]
 
@@ -970,6 +969,7 @@ dependencies = [
  "flexi_logger",
  "hyper 0.13.5",
  "ipfs-api",
+ "ipfs-resolver-common",
  "ipfs-resolver-db",
  "lazy_static",
  "log",
@@ -986,6 +986,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipfs-resolver-common"
+version = "0.1.0"
+dependencies = [
+ "failure",
+ "flexi_logger",
+ "log",
+]
+
+[[package]]
 name = "ipfs-resolver-db"
 version = "0.1.0"
 dependencies = [
@@ -996,6 +1005,7 @@ dependencies = [
  "dotenv",
  "failure",
  "ipfs-api",
+ "ipfs-resolver-common",
  "lazy_static",
  "log",
  "multibase",
@@ -1009,6 +1019,7 @@ dependencies = [
  "dotenv",
  "failure",
  "flexi_logger",
+ "ipfs-resolver-common",
  "ipfs-resolver-db",
  "lazy_static",
  "log",
@@ -2356,23 +2367,6 @@ checksum = "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0"
 dependencies = [
  "log",
  "try-lock",
-]
-
-[[package]]
-name = "wantlist-client"
-version = "0.1.0"
-dependencies = [
- "bytes 0.5.4",
- "chrono",
- "failure",
- "flexi_logger",
- "futures 0.3.4",
- "futures-util",
- "log",
- "serde",
- "serde_json",
- "tokio 0.2.18",
- "tokio-util 0.3.1",
 ]
 
 [[package]]

@@ -1,11 +1,11 @@
 use crate::model::*;
-use crate::Result;
 use diesel::expression::exists::exists;
 use diesel::prelude::*;
 use diesel::select;
 use diesel::PgConnection;
 use failure::ResultExt;
 use ipfs_api::response;
+use ipfs_resolver_common::Result;
 
 pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
     use crate::schema::blocks::dsl::*;

@@ -6,10 +6,11 @@ extern crate log;
 use ipfs_resolver_db::db;
 use ipfs_resolver_db::model;
 
+use ipfs_resolver_common::{logging, Result};
+
 mod unixfs;
 mod heuristics;
 mod ipfs;
-mod logging;
 
 use crate::ipfs::ResolveError;
 use chrono::Utc;
@@ -20,8 +21,6 @@ use ipfs_resolver_db::model::*;
 use reqwest::Url;
 use std::convert::TryFrom;
 use std::env;
-
-pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[tokio::main]
 async fn main() -> Result<()> {

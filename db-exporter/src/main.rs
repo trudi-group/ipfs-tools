@@ -5,13 +5,11 @@ extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
 
-use failure::{Error, ResultExt};
+use failure::ResultExt;
+use ipfs_resolver_common::{logging, Result};
 use std::env;
 
-mod logging;
 mod prom;
-
-pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 fn main() -> Result<()> {
     logging::set_up_logging(false)?;

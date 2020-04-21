@@ -7,15 +7,14 @@ extern crate lazy_static;
 
 use cid::Cid;
 use diesel::{Connection, PgConnection};
-use failure::{Error, ResultExt};
+use failure::ResultExt;
+use ipfs_resolver_common::Result;
 use std::convert::TryFrom;
 use std::env;
 
 pub mod db;
 pub mod model;
 pub mod schema;
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn establish_connection() -> Result<PgConnection> {
     dotenv::dotenv().ok();

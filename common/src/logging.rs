@@ -2,7 +2,7 @@ use crate::Result;
 use flexi_logger::{DeferredNow, Duplicate, Logger, ReconfigurationHandle};
 use log::Record;
 
-pub(crate) fn log_format(
+fn log_format(
     w: &mut dyn std::io::Write,
     now: &mut DeferredNow,
     record: &Record,
@@ -20,7 +20,7 @@ pub(crate) fn log_format(
     )
 }
 
-pub(crate) fn set_up_logging(log_to_file: bool) -> Result<ReconfigurationHandle> {
+pub fn set_up_logging(log_to_file: bool) -> Result<ReconfigurationHandle> {
     let mut logger = Logger::with_env_or_str("debug").format(log_format);
     if log_to_file {
         logger = logger

@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 ipfs-resolver-db = {path = "../db"}
+ipfs-resolver-common = {path = "../common"}
 failure = "0.1.7"
 log = "0.4.8"
 dotenv = "0.15.0"
