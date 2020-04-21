@@ -1,0 +1,20 @@
+[package]
+name = "ipfs-resolver-db"
+version = "0.1.0"
+authors = ["Leo Balduf <leobalduf@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+failure = "0.1.7"
+log = "0.4.8"
+diesel = { version = "1.4.4", features = ["postgres","chrono"] }
+dotenv = "0.15.0"
+lazy_static = "1.4.0"
+chrono = "0.4.11"
+ipfs-api = "0.7.1"
+whatlang = "0.7.3"
+cid = "0.4.0"
+multibase = "0.8.0"
+chardet = "0.2.4"

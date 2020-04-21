@@ -1,22 +1,8 @@
 use crate::{ipfs, Result};
 use chardetng::EncodingDetector;
 use failure::ResultExt;
+use ipfs_resolver_db::db::{ChardetHeuristics, FileHeuristics};
 use reqwest::Url;
-
-#[derive(Debug, Clone)]
-pub(crate) struct FileHeuristics {
-    pub chardet_heuristics: Option<ChardetHeuristics>,
-    pub tree_mime_mime_type: Option<String>,
-    pub chardetng_encoding: Option<String>,
-    pub whatlang_heuristics: Option<whatlang::Info>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ChardetHeuristics {
-    pub charset: String,
-    pub language: String,
-    pub confidence: f32,
-}
 
 pub(crate) async fn get_file_heuristics(
     ipfs_api_base: &Url,
@@ -35,7 +21,7 @@ pub(crate) async fn get_file_heuristics(
     let chardetng_encoding = encoding_detector.guess(None, true);
 
     let mut decoded = String::with_capacity(256 * 1024);
-    let (res, _, _) = chardetng_encoding
+    let (_, _, _) = chardetng_encoding
         .new_decoder()
         .decode_to_string(&data, &mut decoded, true);
     // TODO maybe use res?

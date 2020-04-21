@@ -1,4 +1,3 @@
-use crate::heuristics::{ChardetHeuristics, FileHeuristics};
 use crate::model::*;
 use crate::Result;
 use diesel::expression::exists::exists;
@@ -7,9 +6,8 @@ use diesel::select;
 use diesel::PgConnection;
 use failure::ResultExt;
 use ipfs_api::response;
-use std::env;
 
-pub(crate) fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
+pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
     use crate::schema::blocks::dsl::*;
 
     let res = select(exists(blocks.filter(base32_cidv1.eq(cid))))
@@ -19,7 +17,7 @@ pub(crate) fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
     Ok(res)
 }
 
-pub(crate) fn insert_object_links(
+pub fn insert_object_links(
     conn: &PgConnection,
     block: &Block,
     links: response::ObjectLinksResponse,
@@ -45,7 +43,22 @@ pub(crate) fn insert_object_links(
     Ok(())
 }
 
-pub(crate) fn insert_file_heuristics(
+#[derive(Debug, Clone)]
+pub struct FileHeuristics {
+    pub chardet_heuristics: Option<ChardetHeuristics>,
+    pub tree_mime_mime_type: Option<String>,
+    pub chardetng_encoding: Option<String>,
+    pub whatlang_heuristics: Option<whatlang::Info>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChardetHeuristics {
+    pub charset: String,
+    pub language: String,
+    pub confidence: f32,
+}
+
+pub fn insert_file_heuristics(
     conn: &PgConnection,
     block: &Block,
     heuristics: FileHeuristics,
@@ -84,7 +97,7 @@ pub(crate) fn insert_file_heuristics(
     Ok(heuristics)
 }
 
-pub(crate) fn insert_failed_block_into_db(
+pub fn insert_failed_block_into_db(
     conn: &PgConnection,
     cid_string: &str,
     codec_id: i32,
@@ -99,7 +112,7 @@ pub(crate) fn insert_failed_block_into_db(
     Ok(block)
 }
 
-pub(crate) fn insert_successful_block_into_db(
+pub fn insert_successful_block_into_db(
     conn: &PgConnection,
     cid_string: String,
     codec_id: i32,
@@ -119,7 +132,7 @@ pub(crate) fn insert_successful_block_into_db(
     Ok(block)
 }
 
-pub(crate) fn insert_unixfs_block(
+pub fn insert_unixfs_block(
     conn: &PgConnection,
     block: &Block,
     unixfs_file_type_id: i32,
@@ -310,12 +323,4 @@ fn create_unixfs_file_heuristics<'a>(
         .context("unable to insert")?;
 
     Ok(inserted_heuristics)
-}
-
-pub(crate) fn establish_connection() -> Result<PgConnection> {
-    let database_url = env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
-    let conn = PgConnection::establish(&database_url)
-        .context(format!("error connecting to {}", database_url))?;
-
-    Ok(conn)
 }

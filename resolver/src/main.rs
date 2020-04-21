@@ -2,26 +2,21 @@
 extern crate failure;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate diesel;
-extern crate dotenv;
-#[macro_use]
-extern crate lazy_static;
 
-mod model;
-mod schema;
+use ipfs_resolver_db::db;
+use ipfs_resolver_db::model;
+
 mod unixfs;
-mod db;
 mod heuristics;
 mod ipfs;
 mod logging;
 
 use crate::ipfs::ResolveError;
-use crate::model::*;
 use chrono::Utc;
 use cid::{Cid, Codec};
 use diesel::{Connection, PgConnection};
 use failure::{err_msg, Error, ResultExt};
+use ipfs_resolver_db::model::*;
 use reqwest::Url;
 use std::convert::TryFrom;
 use std::env;
@@ -61,11 +56,11 @@ async fn main() -> Result<()> {
         }
     };
 
-    let cid_string = canonicalize_cid(&arg_cid);
+    let cid_string = ipfs_resolver_db::canonicalize_cid(&arg_cid);
     debug!("canonicalized CID to {}", cid_string);
 
     debug!("connecting to DB...");
-    let conn = db::establish_connection()?;
+    let conn = ipfs_resolver_db::establish_connection()?;
 
     debug!("checking if block already exists...");
     let exists = db::block_exists(&conn, &cid_string)?;
@@ -198,16 +193,6 @@ fn get_v1_cid_from_args() -> Result<Cid> {
     debug!("got CID {}", args[1]);
     let cid = Cid::try_from(args[1].as_str()).context("invalid CID")?;
     Ok(cid)
-}
-
-pub(crate) fn canonicalize_cid_from_str(cid: &str) -> Result<String> {
-    let provided_cid = Cid::try_from(cid).context("invalid CID")?;
-    Ok(canonicalize_cid(&provided_cid))
-}
-
-fn canonicalize_cid(c: &Cid) -> String {
-    let v1_cid = Cid::new_v1(c.codec(), c.hash().to_owned());
-    multibase::encode(multibase::Base::Base32Lower, v1_cid.to_bytes())
 }
 
 fn insert_timeout(conn: &PgConnection, cid_string: &str, codec: &model::Codec) -> Result<()> {
