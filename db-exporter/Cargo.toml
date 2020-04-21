@@ -1,0 +1,17 @@
+[package]
+name = "ipfs-resolver-db-exporter"
+version = "0.1.0"
+authors = ["Leo Balduf <leobalduf@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ipfs-resolver-db = {path = "../db"}
+failure = "0.1.7"
+log = "0.4.8"
+dotenv = "0.15.0"
+flexi_logger = "0.15.2"
+prometheus_exporter = "0.4.1"
+prometheus = {version="0.7.0",features=["process"]}
+lazy_static = "1.4.0"

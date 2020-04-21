@@ -17,6 +17,38 @@ pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
     Ok(res)
 }
 
+pub fn count_blocks(conn: &PgConnection) -> Result<i64> {
+    use crate::schema::blocks;
+
+    let res = blocks::table.count().get_result(conn)?;
+
+    Ok(res)
+}
+
+pub fn count_unixfs_blocks(conn: &PgConnection) -> Result<i64> {
+    use crate::schema::unixfs_blocks;
+
+    let res = unixfs_blocks::table.count().get_result(conn)?;
+
+    Ok(res)
+}
+
+pub fn count_successful_resolves(conn: &PgConnection) -> Result<i64> {
+    use crate::schema::successful_resolves;
+
+    let res = successful_resolves::table.count().get_result(conn)?;
+
+    Ok(res)
+}
+
+pub fn count_failed_resolves(conn: &PgConnection) -> Result<i64> {
+    use crate::schema::failed_resolves;
+
+    let res = failed_resolves::table.count().get_result(conn)?;
+
+    Ok(res)
+}
+
 pub fn insert_object_links(
     conn: &PgConnection,
     block: &Block,
