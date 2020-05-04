@@ -5,7 +5,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
 
-use failure::ResultExt;
+use failure::{err_msg, ResultExt};
 use ipfs_resolver_common::{logging, Result};
 use std::env;
 
@@ -25,8 +25,16 @@ fn main() -> Result<()> {
         .parse()
         .expect("invalid DB_EXPORTER_PROMETHEUS_LISTEN_ADDR");
 
+    let reporting_interval_seconds = env::var("DB_EXPORTER_SCRAPE_INTERVAL_SECONDS")
+        .context("DB_EXPORTER_SCRAPE_INTERVAL_SECONDS must be set")?
+        .parse()
+        .expect("invalid DB_EXPORTER_SCRAPE_INTERVAL_SECONDS");
+    if reporting_interval_seconds < 1 {
+        return Err(err_msg("DB_EXPORTER_SCRAPE_INTERVAL_SECONDS must be >0"));
+    }
+
     info!("starting prometheus stuff..");
-    prom::run_prometheus(listen_addr)?;
+    prom::run_prometheus(listen_addr, reporting_interval_seconds)?;
 
     Ok(())
 }
