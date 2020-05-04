@@ -1,2 +1,2 @@
 [workspace]
-members=["db","resolver","db-exporter","common"]
+members=["db","resolver","db-exporter","common","wantlist-client"]
