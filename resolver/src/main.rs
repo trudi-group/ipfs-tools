@@ -24,6 +24,42 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let inner = do_stuff().await.unwrap_or_else(|err| {
+        eprintln!("{:?}", err);
+        std::process::exit(1)
+    });
+    match inner {
+        Res::Ok => {}
+        Res::SkippedNotFSRelated => {}
+        Res::SkippedExists => {}
+        Res::SkippedCBOR => {
+            std::process::exit(2);
+        }
+        Res::SkippedHAMTShard => {
+            std::process::exit(3);
+        }
+        Res::SkippedMetadata => {
+            std::process::exit(4);
+        }
+        Res::SkippedSymlink => {
+            std::process::exit(5);
+        }
+    }
+
+    Ok(())
+}
+
+enum Res {
+    Ok,
+    SkippedNotFSRelated,
+    SkippedCBOR,
+    SkippedExists,
+    SkippedHAMTShard,
+    SkippedMetadata,
+    SkippedSymlink,
+}
+
+async fn do_stuff() -> Result<Res> {
     logging::set_up_logging(false)?;
 
     dotenv::dotenv().ok();
@@ -48,10 +84,18 @@ async fn main() -> Result<()> {
     let codec = match arg_cid.codec() {
         Codec::Raw => &*CODEC_RAW,
         Codec::DagProtobuf => &*CODEC_DAG_PB,
+        Codec::DagCBOR => {
+            // Let's skip anything not-fs related for now.
+            debug!(
+                "codec is {:?}, skipping BUT recording for future...",
+                arg_cid.codec()
+            );
+            return Ok(Res::SkippedCBOR);
+        }
         _ => {
             // Let's skip anything not-fs related for now.
             debug!("codec is {:?}, skipping...", arg_cid.codec());
-            return Ok(());
+            return Ok(Res::SkippedNotFSRelated);
         }
     };
 
@@ -66,7 +110,7 @@ async fn main() -> Result<()> {
     if exists {
         debug!("already exists. Skipping");
         // Return Ok, so we don't record this as an error.
-        return Ok(());
+        return Ok(Res::SkippedExists);
     }
 
     debug!("querying IPFS for metadata...");
@@ -78,7 +122,7 @@ async fn main() -> Result<()> {
                 match e {
                     ResolveError::ContextDeadlineExceeded => {
                         debug!("deadline exceeded, will record this");
-                        return insert_timeout(&conn, &cid_string, &codec);
+                        return insert_timeout(&conn, &cid_string, &codec).map(|_| Res::Ok);
                     }
                     _ => Err(e),
                 }
@@ -108,19 +152,19 @@ async fn main() -> Result<()> {
                 unixfs::Data_DataType::HAMTShard => {
                     // We skip these for now because we need to decode them properly to get actual link names.
                     debug!("skipping HAMTShard block");
-                    return Ok(());
+                    return Ok(Res::SkippedHAMTShard);
                     //&*UNIXFS_TYPE_HAMT_SHARD
                 }
                 unixfs::Data_DataType::Metadata => {
                     // We skip these for now because I have no idea how to treat them.
                     debug!("skipping metadata block");
-                    return Ok(());
+                    return Ok(Res::SkippedMetadata);
                     //&*UNIXFS_TYPE_METADATA
                 }
                 unixfs::Data_DataType::Symlink => {
                     // We skip these for now because, again, I have no idea how to treat them.
                     debug!("skipping symlink block");
-                    return Ok(());
+                    return Ok(Res::SkippedSymlink);
                     //&*UNIXFS_TYPE_SYMLINK
                 }
                 unixfs::Data_DataType::Raw => &*UNIXFS_TYPE_RAW, // This is a bit strange and I think it never actually happens, but whatever.
@@ -180,7 +224,7 @@ async fn main() -> Result<()> {
     .context("unable to insert")?;
 
     debug!("done.");
-    Ok(())
+    Ok(Res::Ok)
 }
 
 fn get_v1_cid_from_args() -> Result<Cid> {
