@@ -78,8 +78,9 @@ async fn main() -> Result<()> {
     let mut messages_in = client.messages_in;
 
     while let Some(wl) = messages_in.recv().await {
-        if wl.peer_connected {
-            match wl.connect_event_peer_found {
+        if wl.peer_connected.is_some() && wl.peer_connected.unwrap() {
+            // Unwrap this because I hope that works...
+            match wl.connect_event_peer_found.unwrap() {
                 true => {
                     num_connected_found.inc();
                 }
@@ -92,7 +93,7 @@ async fn main() -> Result<()> {
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
-                match wl.connect_event_peer_found {
+                match wl.connect_event_peer_found.unwrap() {
                     true => {
                         "CONNECTED; FOUND"
                     }
@@ -101,8 +102,8 @@ async fn main() -> Result<()> {
                     }
                 }
             )
-        } else if wl.peer_disconnected {
-            match wl.connect_event_peer_found {
+        } else if wl.peer_disconnected.is_some() && wl.peer_disconnected.unwrap() {
+            match wl.connect_event_peer_found.unwrap() {
                 true => {
                     num_disconnected_found.inc();
                 }
@@ -115,7 +116,7 @@ async fn main() -> Result<()> {
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
-                match wl.connect_event_peer_found {
+                match wl.connect_event_peer_found.unwrap() {
                     true => {
                         "DISCONNECTED; FOUND"
                     }
@@ -124,7 +125,7 @@ async fn main() -> Result<()> {
                     }
                 }
             )
-        } else {
+        } else if wl.received_entries.is_some() {
             num_messages.inc();
 
             match wl.received_entries {
@@ -151,10 +152,11 @@ async fn main() -> Result<()> {
                         }
 
                         println!(
-                            "{} {} {:25} ({:10}) {}",
+                            "{} {} {:4} {:25} ({:10}) {}",
                             wl.timestamp
                                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                             wl.peer,
+                            if wl.full_want_list { "FULL" } else { "INC" },
                             if entry.cancel {
                                 "CANCEL".to_string()
                             } else {
@@ -181,6 +183,8 @@ async fn main() -> Result<()> {
                 }
                 None => println!("empty entries"),
             }
+        } else {
+            println!("no connect/disconnect event and no entries?")
         }
     }
 

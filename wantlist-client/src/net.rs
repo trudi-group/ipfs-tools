@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::select;
 use futures::StreamExt;
 use futures_util::future::FutureExt;
+use ipfs_resolver_common::wantlist::IncrementalWantList;
 use ipfs_resolver_common::Result;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -9,36 +10,6 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct JsonCID {
-    #[serde(rename = "/")]
-    pub path: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct Entry {
-    #[serde(alias = "Priority")]
-    pub priority: i32,
-    #[serde(alias = "Cancel")]
-    pub cancel: bool,
-    #[serde(alias = "SendDontHave")]
-    pub send_dont_have: bool,
-    #[serde(alias = "Cid")]
-    pub cid: JsonCID,
-    #[serde(alias = "WantType")]
-    pub want_type: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct IncrementalWantList {
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub peer: String,
-    pub received_entries: Option<Vec<Entry>>,
-    pub peer_connected: bool,
-    pub peer_disconnected: bool,
-    pub connect_event_peer_found: bool,
-}
 
 pub(crate) struct Connection {
     pub remote: SocketAddr,
