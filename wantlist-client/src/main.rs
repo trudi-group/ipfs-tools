@@ -10,13 +10,10 @@ use std::env;
 use tokio::net::TcpStream;
 
 use crate::net::Connection;
-use ipfs_resolver_common::{logging, Result};
+use ipfs_resolver_common::{logging, wantlist, Result};
 
 mod net;
 mod prom;
-
-const WANT_TYPE_BLOCK: i32 = 0;
-const WANT_TYPE_HAVE: i32 = 1;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -134,13 +131,13 @@ async fn main() -> Result<()> {
                         if entry.cancel {
                             num_cancels.inc();
                         } else {
-                            if entry.want_type == WANT_TYPE_BLOCK {
+                            if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
                                 if entry.send_dont_have {
                                     num_want_block_send_dont_have.inc();
                                 } else {
                                     num_want_block.inc();
                                 }
-                            } else if entry.want_type == WANT_TYPE_HAVE {
+                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
                                 if entry.send_dont_have {
                                     num_want_have_send_dont_have.inc();
                                 } else {
@@ -156,17 +153,29 @@ async fn main() -> Result<()> {
                             wl.timestamp
                                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                             wl.peer,
-                            if wl.full_want_list { "FULL" } else { "INC" },
+                            match wl.full_want_list {
+                                Some(f) => match f {
+                                    true => {
+                                        "FULL"
+                                    }
+                                    false => {
+                                        "INC"
+                                    }
+                                },
+                                None => {
+                                    "???"
+                                }
+                            },
                             if entry.cancel {
                                 "CANCEL".to_string()
                             } else {
-                                if entry.want_type == WANT_TYPE_BLOCK {
+                                if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
                                     if entry.send_dont_have {
                                         "WANT_BLOCK|SEND_DONT_HAVE".to_string()
                                     } else {
                                         "WANT_BLOCK".to_string()
                                     }
-                                } else if entry.want_type == WANT_TYPE_HAVE {
+                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
                                     if entry.send_dont_have {
                                         "WANT_HAVE|SEND_DONT_HAVE".to_string()
                                     } else {

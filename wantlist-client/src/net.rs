@@ -2,9 +2,8 @@ use bytes::Bytes;
 use futures::select;
 use futures::StreamExt;
 use futures_util::future::FutureExt;
-use ipfs_resolver_common::wantlist::IncrementalWantList;
+use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::Result;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -13,7 +12,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 pub(crate) struct Connection {
     pub remote: SocketAddr,
-    pub messages_in: Receiver<IncrementalWantList>,
+    pub messages_in: Receiver<JSONMessage>,
 }
 
 impl Connection {
@@ -31,7 +30,7 @@ impl Connection {
         //let (mut tx_encode, rx_encode) = channel::<Bytes>(100);
         let (tx_decode, mut rx_decode) = channel::<Bytes>(100);
         //let (tx_message_out, mut rx_message_out) = channel::<Message>(100);
-        let (mut tx_message_in, rx_message_in) = channel::<IncrementalWantList>(100);
+        let (mut tx_message_in, rx_message_in) = channel::<JSONMessage>(100);
 
         // Decode incoming messages
         task::spawn(async move {
@@ -43,7 +42,7 @@ impl Connection {
                     error!("decoder {}: unable to decode: {:?}", remote, e);
                     break;
                 }
-                let msg: Vec<IncrementalWantList> = res.unwrap();
+                let msg: Vec<JSONMessage> = res.unwrap();
                 debug!("decoder {}: decoded {:?}", remote, msg);
 
                 for wl in msg.into_iter() {

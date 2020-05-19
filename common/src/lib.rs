@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use failure::Error;
 
 pub mod logging;
