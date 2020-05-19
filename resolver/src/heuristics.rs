@@ -5,13 +5,12 @@ use ipfs_resolver_common::Result;
 use ipfs_resolver_db::db::{ChardetHeuristics, FileHeuristics};
 use reqwest::Url;
 
-pub(crate) async fn get_file_heuristics(
+pub(crate) fn get_file_heuristics(
     ipfs_api_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
 ) -> Result<FileHeuristics> {
     let data = ipfs::query_ipfs_for_cat(ipfs_api_base, resolve_timeout, cid_string, 10 * 1024)
-        .await
         .context("unable to /cat file")?;
 
     let mut encoding_detector = EncodingDetector::new();

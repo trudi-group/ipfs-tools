@@ -1,3 +1,4 @@
+use failure::_core::time::Duration;
 use failure::err_msg;
 use failure::{Error, Fail};
 use ipfs_api::response;
@@ -21,7 +22,16 @@ pub(crate) enum ResolveError {
 
 pub(crate) type Result<T> = std::result::Result<T, ResolveError>;
 
-pub(crate) async fn query_ipfs_for_cat(
+pub(crate) fn query_ipfs_id(ipfs_base: &Url) -> Result<String> {
+    let mut url = ipfs_base.clone();
+    url.set_path("api/v0/id");
+
+    let id: response::IdResponse = query_ipfs_api(url, Duration::from_secs(30))?;
+
+    Ok(id.id)
+}
+
+pub(crate) fn query_ipfs_for_cat(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -53,10 +63,10 @@ pub(crate) async fn query_ipfs_for_cat(
 
     url.set_query(Some(&query));
 
-    query_ipfs_api_raw(url).await
+    query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) async fn query_ipfs_for_block_get(
+pub(crate) fn query_ipfs_for_block_get(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -73,10 +83,10 @@ pub(crate) async fn query_ipfs_for_block_get(
         resolve_timeout
     )));
 
-    query_ipfs_api_raw(url).await
+    query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) async fn query_ipfs_for_object_data(
+pub(crate) fn query_ipfs_for_object_data(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -93,10 +103,10 @@ pub(crate) async fn query_ipfs_for_object_data(
         resolve_timeout
     )));
 
-    query_ipfs_api_raw(url).await
+    query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) async fn query_ipfs_for_metadata(
+pub(crate) fn query_ipfs_for_metadata(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -149,11 +159,14 @@ pub(crate) async fn query_ipfs_for_metadata(
         resolve_timeout
     )));
 
-    let block_stat: response::BlockStatResponse = query_ipfs_api(block_stat_url).await?;
+    let block_stat: response::BlockStatResponse =
+        query_ipfs_api(block_stat_url, Duration::from_secs(300))?;
     //.context("unable to query IPFS API /block/stat")?;
-    let files_stat: response::FilesStatResponse = query_ipfs_api(files_stat_url).await?;
+    let files_stat: response::FilesStatResponse =
+        query_ipfs_api(files_stat_url, Duration::from_secs(300))?;
     //.context("unable to query IPFS API /files/stat")?;
-    let object_stat: response::ObjectStatResponse = query_ipfs_api(object_stat_url).await?;
+    let object_stat: response::ObjectStatResponse =
+        query_ipfs_api(object_stat_url, Duration::from_secs(300))?;
     //.context("unable to query IPFS API /object/stat")?;
 
     // The IPFS HTTP API leaves out the "Links" field if there are no refs, which in turn causes
@@ -169,26 +182,25 @@ pub(crate) async fn query_ipfs_for_metadata(
             },
         ));
     }
-    let refs: response::ObjectLinksResponse = query_ipfs_api(object_links_url).await?;
+    let refs: response::ObjectLinksResponse =
+        query_ipfs_api(object_links_url, Duration::from_secs(300))?;
     //.context("unable to query IPFS API /object/links")?;
 
     Ok((block_stat, files_stat, object_stat, refs))
 }
 
-async fn query_ipfs_api_raw(url: Url) -> Result<Vec<u8>> {
-    let c = reqwest::Client::new();
-    let resp = c
-        .post(url)
-        .send()
-        .await
-        .map_err(|e| ResolveError::Request(e))?;
+fn query_ipfs_api_raw(url: Url, client_timeout: Duration) -> Result<Vec<u8>> {
+    let c = reqwest::blocking::Client::builder()
+        .timeout(Some(client_timeout))
+        .build()
+        .expect("unable to build client");
+    let resp = c.post(url).send().map_err(|e| ResolveError::Request(e))?;
 
     match resp.status() {
         hyper::StatusCode::OK => {
             // parse as T
             let body = resp
                 .bytes()
-                .await
                 .map_err(|e| ResolveError::UnableToReadBody(e))?;
             Ok(body.to_vec())
         }
@@ -196,7 +208,6 @@ async fn query_ipfs_api_raw(url: Url) -> Result<Vec<u8>> {
             // try to parse as IPFS error...
             let body = resp
                 .bytes()
-                .await
                 .map_err(|e| ResolveError::UnableToReadBody(e))?;
             let err = serde_json::from_slice::<ipfs_api::response::ApiError>(&body);
             match err {
@@ -221,11 +232,11 @@ async fn query_ipfs_api_raw(url: Url) -> Result<Vec<u8>> {
     }
 }
 
-async fn query_ipfs_api<Res>(url: Url) -> Result<Res>
+fn query_ipfs_api<Res>(url: Url, client_timeout: Duration) -> Result<Res>
 where
     for<'de> Res: 'static + serde::Deserialize<'de>,
 {
-    let body = query_ipfs_api_raw(url).await?;
+    let body = query_ipfs_api_raw(url, client_timeout)?;
 
     let parsed = serde_json::from_slice::<Res>(&body);
     match parsed {
