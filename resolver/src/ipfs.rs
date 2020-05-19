@@ -194,21 +194,17 @@ fn query_ipfs_api_raw(url: Url, client_timeout: Duration) -> Result<Vec<u8>> {
         .timeout(Some(client_timeout))
         .build()
         .expect("unable to build client");
-    let resp = c.post(url).send().map_err(|e| ResolveError::Request(e))?;
+    let resp = c.post(url).send().map_err(ResolveError::Request)?;
 
     match resp.status() {
         hyper::StatusCode::OK => {
             // parse as T
-            let body = resp
-                .bytes()
-                .map_err(|e| ResolveError::UnableToReadBody(e))?;
+            let body = resp.bytes().map_err(ResolveError::UnableToReadBody)?;
             Ok(body.to_vec())
         }
         _ => {
             // try to parse as IPFS error...
-            let body = resp
-                .bytes()
-                .map_err(|e| ResolveError::UnableToReadBody(e))?;
+            let body = resp.bytes().map_err(ResolveError::UnableToReadBody)?;
             let err = serde_json::from_slice::<ipfs_api::response::ApiError>(&body);
             match err {
                 Ok(err) => {

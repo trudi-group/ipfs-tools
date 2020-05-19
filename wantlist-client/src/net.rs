@@ -77,7 +77,7 @@ impl Connection {
         loop {
             select! {
                 in_bytes = framed.next().fuse() => {
-                    if let None = in_bytes {
+                    if in_bytes.is_none() {
                         debug!("I/O {}: incoming connection closed",remote);
                         break;
                     }

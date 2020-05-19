@@ -68,7 +68,10 @@ fn main() -> Result<()> {
                     .unwrap()
                     .is_present("synth"),
             ),
-            "print-lookup" => Ok(print_lookup_tables()),
+            "print-lookup" => {
+                print_lookup_tables();
+                Ok(())
+            }
             _ => {
                 println!("{}", matches.usage());
                 Ok(())
@@ -160,7 +163,7 @@ fn do_transform_single_file(
     match first_message_ts {
         Some(first_ts) => match last_message_ts {
             Some(last_ts) => Ok(Some((first_ts, last_ts))),
-            None => Ok(Some((first_ts.clone(), first_ts))),
+            None => Ok(Some((first_ts, first_ts))),
         },
         None => Ok(None),
     }
@@ -188,7 +191,7 @@ fn do_transform(
                 info!("now working on {}", path.display());
                 let filename = path
                     .file_stem()
-                    .ok_or(err_msg(format!("file {} has no basename?", path.display())))?;
+                    .ok_or_else(|| err_msg(format!("file {} has no basename?", path.display())))?;
 
                 let output_file_path = outdir
                     .join(PathBuf::from(filename))

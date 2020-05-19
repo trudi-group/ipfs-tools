@@ -71,55 +71,43 @@ async fn main() -> Result<()> {
     let conn = TcpStream::connect(addr.as_str()).await?;
 
     let client = Connection::new(conn).await?;
-    let _remote = client.remote.clone();
+    let _remote = client.remote;
     let mut messages_in = client.messages_in;
 
     while let Some(wl) = messages_in.recv().await {
         if wl.peer_connected.is_some() && wl.peer_connected.unwrap() {
             // Unwrap this because I hope that works...
-            match wl.connect_event_peer_found.unwrap() {
-                true => {
-                    num_connected_found.inc();
-                }
-                false => {
-                    num_connected_not_found.inc();
-                }
+            if wl.connect_event_peer_found.unwrap() {
+                num_connected_found.inc();
+            } else {
+                num_connected_not_found.inc();
             }
             println!(
                 "{} {} {:25}",
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
-                match wl.connect_event_peer_found.unwrap() {
-                    true => {
-                        "CONNECTED; FOUND"
-                    }
-                    false => {
-                        "CONNECTED; NOT FOUND"
-                    }
+                if wl.connect_event_peer_found.unwrap() {
+                    "CONNECTED; FOUND"
+                } else {
+                    "CONNECTED; NOT FOUND"
                 }
             )
         } else if wl.peer_disconnected.is_some() && wl.peer_disconnected.unwrap() {
-            match wl.connect_event_peer_found.unwrap() {
-                true => {
-                    num_disconnected_found.inc();
-                }
-                false => {
-                    num_disconnected_not_found.inc();
-                }
+            if wl.connect_event_peer_found.unwrap() {
+                num_disconnected_found.inc();
+            } else {
+                num_disconnected_not_found.inc();
             }
             println!(
                 "{} {} {:25}",
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
-                match wl.connect_event_peer_found.unwrap() {
-                    true => {
-                        "DISCONNECTED; FOUND"
-                    }
-                    false => {
-                        "DISCONNECTED; NOT FOUND"
-                    }
+                if wl.connect_event_peer_found.unwrap() {
+                    "DISCONNECTED; FOUND"
+                } else {
+                    "DISCONNECTED; NOT FOUND"
                 }
             )
         } else if wl.received_entries.is_some() {
@@ -130,22 +118,20 @@ async fn main() -> Result<()> {
                     for entry in entries.iter() {
                         if entry.cancel {
                             num_cancels.inc();
-                        } else {
-                            if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                if entry.send_dont_have {
-                                    num_want_block_send_dont_have.inc();
-                                } else {
-                                    num_want_block.inc();
-                                }
-                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                if entry.send_dont_have {
-                                    num_want_have_send_dont_have.inc();
-                                } else {
-                                    num_want_have.inc();
-                                }
+                        } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                            if entry.send_dont_have {
+                                num_want_block_send_dont_have.inc();
                             } else {
-                                num_unknown.inc();
+                                num_want_block.inc();
                             }
+                        } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                            if entry.send_dont_have {
+                                num_want_have_send_dont_have.inc();
+                            } else {
+                                num_want_have.inc();
+                            }
+                        } else {
+                            num_unknown.inc();
                         }
 
                         println!(
@@ -154,36 +140,32 @@ async fn main() -> Result<()> {
                                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                             wl.peer,
                             match wl.full_want_list {
-                                Some(f) => match f {
-                                    true => {
+                                Some(f) =>
+                                    if f {
                                         "FULL"
-                                    }
-                                    false => {
+                                    } else {
                                         "INC"
-                                    }
-                                },
+                                    },
                                 None => {
                                     "???"
                                 }
                             },
                             if entry.cancel {
                                 "CANCEL".to_string()
-                            } else {
-                                if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                    if entry.send_dont_have {
-                                        "WANT_BLOCK|SEND_DONT_HAVE".to_string()
-                                    } else {
-                                        "WANT_BLOCK".to_string()
-                                    }
-                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                    if entry.send_dont_have {
-                                        "WANT_HAVE|SEND_DONT_HAVE".to_string()
-                                    } else {
-                                        "WANT_HAVE".to_string()
-                                    }
+                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                                if entry.send_dont_have {
+                                    "WANT_BLOCK|SEND_DONT_HAVE".to_string()
                                 } else {
-                                    format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
+                                    "WANT_BLOCK".to_string()
                                 }
+                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                                if entry.send_dont_have {
+                                    "WANT_HAVE|SEND_DONT_HAVE".to_string()
+                                } else {
+                                    "WANT_HAVE".to_string()
+                                }
+                            } else {
+                                format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
                             },
                             entry.priority,
                             entry.cid.path

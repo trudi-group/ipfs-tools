@@ -547,13 +547,10 @@ fn process_single_cid(
         let unixfs_block = db::insert_unixfs_block(&conn, &block, typ.id, files_stat, object_stat)?;
         debug!("inserted UnixFS block as {:?}", unixfs_block);
 
-        match heur {
-            Some(heuristics) => {
-                debug!("inserting file heuristics...");
-                let heuristics = db::insert_file_heuristics(&conn, &block, heuristics)?;
-                debug!("inserted heuristics as {:?}", heuristics);
-            }
-            None => {}
+        if let Some(heuristics) = heur {
+            debug!("inserting file heuristics...");
+            let heuristics = db::insert_file_heuristics(&conn, &block, heuristics)?;
+            debug!("inserted heuristics as {:?}", heuristics);
         }
 
         debug!("inserting object links...");

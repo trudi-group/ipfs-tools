@@ -1,5 +1,4 @@
 use crate::Result;
-use chrono;
 use failure::err_msg;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -116,10 +115,10 @@ impl CSVWantlistEntry {
         match message.received_entries {
             Some(entries) => {
                 let peer = message.peer.clone();
-                let timestamp = message.timestamp.clone();
+                let timestamp = message.timestamp;
                 let timestamp_seconds = timestamp.timestamp();
                 let timestamp_subsec_millis = timestamp.timestamp_subsec_millis();
-                let full_want_list = message.full_want_list.clone();
+                let full_want_list = message.full_want_list;
 
                 let csv_entries = entries
                     .into_iter()
@@ -142,19 +141,26 @@ impl CSVWantlistEntry {
                         timestamp_subsec_milliseconds: timestamp_subsec_millis,
                         peer_id: peer.clone(),
                         priority: entry.priority,
-                        entry_type: match entry.cancel {
-                            true => CSV_ENTRY_TYPE_CANCEL,
-                            false => match entry.want_type {
-                                JSON_WANT_TYPE_BLOCK => match entry.send_dont_have {
-                                    true => CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE,
-                                    false => CSV_ENTRY_TYPE_WANT_BLOCK,
-                                },
-                                JSON_WANT_TYPE_HAVE => match entry.send_dont_have {
-                                    true => CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE,
-                                    false => CSV_ENTRY_TYPE_WANT_HAVE,
-                                },
+                        entry_type: if entry.cancel {
+                            CSV_ENTRY_TYPE_CANCEL
+                        } else {
+                            match entry.want_type {
+                                JSON_WANT_TYPE_BLOCK => {
+                                    if entry.send_dont_have {
+                                        CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE
+                                    } else {
+                                        CSV_ENTRY_TYPE_WANT_BLOCK
+                                    }
+                                }
+                                JSON_WANT_TYPE_HAVE => {
+                                    if entry.send_dont_have {
+                                        CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE
+                                    } else {
+                                        CSV_ENTRY_TYPE_WANT_HAVE
+                                    }
+                                }
                                 _ => panic!(format!("unknown JSON want type {}", entry.want_type)),
-                            },
+                            }
                         },
                         cid: entry.cid.path,
                     })
@@ -178,45 +184,41 @@ pub struct CSVConnectionEvent {
 
 impl CSVConnectionEvent {
     pub fn from_json_message(message: JSONMessage, id: i64) -> Result<CSVConnectionEvent> {
-        match message.peer_disconnected {
-            Some(disconnected) => {
-                if disconnected {
-                    return match message.connect_event_peer_found {
-                        Some(found) => Ok(CSVConnectionEvent {
-                            message_id: id,
-                            timestamp_seconds: message.timestamp.timestamp(),
-                            timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
-                            peer_id: message.peer,
-                            event_type: match found {
-                                true => CSV_CONNECTION_EVENT_DISCONNECTED_FOUND,
-                                false => CSV_CONNECTION_EVENT_DISCONNECTED_NOT_FOUND,
-                            },
-                        }),
-                        None => Err(err_msg("got disconnected but found is None")),
-                    };
-                }
+        if let Some(disconnected) = message.peer_disconnected {
+            if disconnected {
+                return match message.connect_event_peer_found {
+                    Some(found) => Ok(CSVConnectionEvent {
+                        message_id: id,
+                        timestamp_seconds: message.timestamp.timestamp(),
+                        timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
+                        peer_id: message.peer,
+                        event_type: if found {
+                            CSV_CONNECTION_EVENT_DISCONNECTED_FOUND
+                        } else {
+                            CSV_CONNECTION_EVENT_DISCONNECTED_NOT_FOUND
+                        },
+                    }),
+                    None => Err(err_msg("got disconnected but found is None")),
+                };
             }
-            None => {}
         }
-        match message.peer_connected {
-            Some(connected) => {
-                if connected {
-                    return match message.connect_event_peer_found {
-                        Some(found) => Ok(CSVConnectionEvent {
-                            message_id: id,
-                            timestamp_seconds: message.timestamp.timestamp(),
-                            timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
-                            peer_id: message.peer,
-                            event_type: match found {
-                                true => CSV_CONNECTION_EVENT_CONNECTED_FOUND,
-                                false => CSV_CONNECTION_EVENT_CONNECTED_NOT_FOUND,
-                            },
-                        }),
-                        None => Err(err_msg("got connected but found is None")),
-                    };
-                }
+        if let Some(connected) = message.peer_connected {
+            if connected {
+                return match message.connect_event_peer_found {
+                    Some(found) => Ok(CSVConnectionEvent {
+                        message_id: id,
+                        timestamp_seconds: message.timestamp.timestamp(),
+                        timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
+                        peer_id: message.peer,
+                        event_type: if found {
+                            CSV_CONNECTION_EVENT_CONNECTED_FOUND
+                        } else {
+                            CSV_CONNECTION_EVENT_CONNECTED_NOT_FOUND
+                        },
+                    }),
+                    None => Err(err_msg("got connected but found is None")),
+                };
             }
-            None => {}
         }
 
         Err(err_msg("not a connection event"))
@@ -236,7 +238,7 @@ pub struct WantlistEntry {
     //send_dont_have: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Wantlist {
     peers: HashMap<String, Vec<WantlistEntry>>,
 }
@@ -290,26 +292,24 @@ impl Wantlist {
     }
 
     fn split_wants_cancels(
-        new_entries: &Vec<JSONWantlistEntry>,
+        new_entries: &[JSONWantlistEntry],
     ) -> (Vec<&JSONWantlistEntry>, Vec<&JSONWantlistEntry>) {
         let (cancels, wants): (Vec<&JSONWantlistEntry>, Vec<&JSONWantlistEntry>) =
-            new_entries.into_iter().partition(|e| e.cancel);
+            new_entries.iter().partition(|e| e.cancel);
         (wants, cancels)
     }
 
     fn apply_new_entries(
         current_entries: &mut Vec<WantlistEntry>,
-        new_entries: &Vec<JSONWantlistEntry>,
+        new_entries: &[JSONWantlistEntry],
     ) -> Result<()> {
         let (wants, cancels) = Self::split_wants_cancels(new_entries);
 
         for cancel in cancels {
-            match current_entries.binary_search_by(|e| e.cid.cmp(&cancel.cid.path)) {
-                Ok(i) => {
-                    current_entries.remove(i);
-                }
-                Err(_) => {} // not found, doesn't matter
+            if let Ok(i) = current_entries.binary_search_by(|e| e.cid.cmp(&cancel.cid.path)) {
+                current_entries.remove(i);
             }
+            // Else not found, but doesn't matter.
         }
 
         for want in wants {

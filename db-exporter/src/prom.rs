@@ -154,23 +154,19 @@ fn publish_stats(
     unixfs_blocks: &GenericGauge<AtomicI64>,
     stats: DbStats,
 ) {
-    match stats.num_blocks {
-        Some(num) => blocks.set(num),
-        None => {}
+    if let Some(num) = stats.num_blocks {
+        blocks.set(num)
     }
 
-    match stats.num_unixfs_blocks {
-        Some(num) => unixfs_blocks.set(num),
-        None => {}
+    if let Some(num) = stats.num_unixfs_blocks {
+        unixfs_blocks.set(num)
     }
 
-    match stats.num_successful_resolves {
-        Some(num) => successful_resolves.set(num),
-        None => {}
+    if let Some(num) = stats.num_successful_resolves {
+        successful_resolves.set(num)
     }
 
-    match stats.num_failed_resolves {
-        Some(num) => failed_resolves.set(num),
-        None => {}
+    if let Some(num) = stats.num_failed_resolves {
+        failed_resolves.set(num)
     }
 }
