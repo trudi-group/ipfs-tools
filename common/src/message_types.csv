@@ -1,0 +1,4 @@
+id,name,text
+1,INCREMENTAL,"Incremental wantlist entry, modifies existing wantlist for a peer or starts a new one if it was empty."
+2,FULL,"Full wantlist. This replaces the current wantlist for a peer."
+3,SYNTHETIC,"Synthetic entries derived from connection events. These are not part of the Bitswap protocol and are inserted by ipfs-json-to-csv."

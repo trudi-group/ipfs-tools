@@ -1,0 +1,5 @@
+id,name,text
+1,CONNECTED_FOUND,"A peer connected but we already had a ledger entry for it."
+2,CONNECTED_NOT_FOUND,"A peer connected and we did not yet have a ledger entry for it."
+3,DISCONNECTED_FOUND,"A peer disconnected and we had a ledger entry for it, which we now deleted."
+4,DISCONNECTED_NOT_FOUND,"A peer disconnected but we did not have a ledger entry for it."
