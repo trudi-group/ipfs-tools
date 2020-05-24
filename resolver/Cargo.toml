@@ -15,7 +15,7 @@ dotenv = "0.15.0"
 flexi_logger = "0.15.2"
 ipfs-api = "0.7.1"
 #tokio = { version = "0.2.18", features = ["rt-threaded","macros","sync"] }
-cid = "0.4.0"
+cid = "0.5.0"
 hyper = "0.13.5"
 reqwest = { version = "0.10.4", features = ["blocking","json"] }
 serde = "1.0.106"
