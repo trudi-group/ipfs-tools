@@ -71,12 +71,11 @@ table! {
 }
 
 table! {
-    unixfs_links (parent_block_id, referenced_base32_cidv1, name) {
+    unixfs_links (parent_block_id, name, referenced_cidv1) {
         parent_block_id -> Int4,
-        referenced_base32_cidv1 -> Text,
         name -> Text,
         size -> Int8,
-        referenced_cidv1 -> Nullable<Bytea>,
+        referenced_cidv1 -> Bytea,
     }
 }
 
