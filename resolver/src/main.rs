@@ -18,6 +18,8 @@ use cid::{Cid, Codec};
 use clap::{App, Arg, SubCommand};
 use diesel::{Connection, PgConnection};
 use failure::{err_msg, Error, ResultExt};
+use ipfs_api::response::{FilesStatResponse, ObjectLinksResponse, ObjectStatResponse};
+use ipfs_resolver_db::db::{BlockStatus, FileHeuristics};
 use ipfs_resolver_db::model::*;
 use reqwest::Url;
 use std::convert::TryFrom;
@@ -235,6 +237,10 @@ fn handle_task_result(
                 info!("{}: {:?} (recording)", cid, r);
                 writeln!(leftovers, "{}", cid).context("unable to write to leftovers file")?;
             }
+            Res::InsertedResolveTimeout => {
+                info!("{}: resolve timed out (recording)", cid);
+                writeln!(leftovers, "{}", cid).context("unable to write to leftovers file")?;
+            }
         },
         Err(e) => {
             warn!("{}: {:?} (recording to file)", cid, e);
@@ -373,12 +379,16 @@ fn process_single(cid: &str) {
         Res::SkippedSymlink => {
             std::process::exit(5);
         }
+        Res::InsertedResolveTimeout => {
+            std::process::exit(6);
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 enum Res {
     Ok,
+    InsertedResolveTimeout,
     SkippedNotFSRelated,
     SkippedCBOR,
     SkippedExists,
@@ -442,11 +452,24 @@ fn process_single_cid(
     debug!("canonicalized CID to {}", cid_string);
 
     debug!("checking if block already exists...");
-    let exists = db::block_exists(&conn, &cid_string)?;
-    if exists {
-        debug!("already exists. Skipping");
-        // Return Ok, so we don't record this as an error.
-        return Ok(Res::SkippedExists);
+    let block_status = db::block_exists(&conn, &cid_string)?;
+    match block_status {
+        BlockStatus::SuccessfulUnixFSExists(block, resolves, stat)
+        | BlockStatus::SuccessfulAndFailedUnixFSExists(block, resolves, _, stat) => {
+            debug!(
+                "already exists with ID {}, stat {:?}, successfully resolved on {}. Skipping",
+                block.id,
+                stat,
+                resolves
+                    .iter()
+                    .map(|r| format!("{}", r.ts.format("%Y-%m-%d %H:%M:%S")))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+            // Return Ok, so we don't record this as an error.
+            return Ok(Res::SkippedExists);
+        }
+        _ => {}
     }
 
     debug!("querying IPFS for metadata...");
@@ -458,7 +481,8 @@ fn process_single_cid(
                 match e {
                     ResolveError::ContextDeadlineExceeded => {
                         debug!("deadline exceeded, will record this");
-                        return insert_timeout(&conn, &cid_string, codec).map(|_| Res::Ok);
+                        return insert_timeout(&conn, &cid_string, codec, block_status)
+                            .map(|_| Res::InsertedResolveTimeout);
                     }
                     _ => Err(e),
                 }
@@ -530,31 +554,49 @@ fn process_single_cid(
         Some(h)
     };
 
-    debug!("inserting...");
-    conn.transaction(|| {
-        debug!("inserting block");
-        let block = db::insert_successful_block_into_db(
-            &conn,
-            cid_string,
-            codec.id,
-            block_stat,
-            raw_block,
-            Utc::now().naive_utc(),
-        )?;
-        debug!("inserted block as {:?}", block);
+    debug!("inserting with current status {:?}...", block_status);
+    conn.transaction::<_,failure::Error,_>(|| {
+        match block_status {
+            BlockStatus::Missing => {
+                debug!("inserting block");
+                let block = db::insert_successful_block_into_db(
+                    &conn,
+                    cid_string,
+                    codec.id,
+                    block_stat,
+                    raw_block,
+                    Utc::now().naive_utc(),
+                ).context("unable to insert block")?;
+                debug!("inserted block as {:?}", block);
 
-        debug!("inserting UnixFS block...");
-        let unixfs_block = db::insert_unixfs_block(&conn, &block, typ.id, files_stat, object_stat)?;
-        debug!("inserted UnixFS block as {:?}", unixfs_block);
+                insert_unixfs_things(conn,&block,heur,typ,files_stat,object_stat,links).context("unable to insert UnixFS-related things")?;
+            },
+            BlockStatus::SuccessfulUnixFSMissing(block,_) | BlockStatus::SuccessfulAndFailedUnixFSMissing(block,_,_) => {
+                debug!("block already exists, but missing UnixFS things. Inserting additional successful resolve");
+                db::insert_additional_successful_resolve_into_db(conn,&block,Utc::now().naive_utc()).context("unable to insert additional successful resolve")?;
 
-        if let Some(heuristics) = heur {
-            debug!("inserting file heuristics...");
-            let heuristics = db::insert_file_heuristics(&conn, &block, heuristics)?;
-            debug!("inserted heuristics as {:?}", heuristics);
+                insert_unixfs_things(conn,&block,heur,typ,files_stat,object_stat,links).context("unable to insert UnixFS-related things")?;
+            },
+            BlockStatus::BlockExistsUnixFSExists(block,_)
+            | BlockStatus::SuccessfulUnixFSExists(block, _,_)
+            | BlockStatus::FailedUnixFSExists(block, _,_)
+            | BlockStatus::SuccessfulAndFailedUnixFSExists(block,_,_,_)=> {
+                debug!("block already exists, but inserting additional successful resolve");
+                db::insert_additional_successful_resolve_into_db(conn,&block,Utc::now().naive_utc()).context("unable to insert additional successful resolve")?;
+            },
+            BlockStatus::FailedUnixFSMissing(block, _) | BlockStatus::BlockExistsUnixFSMissing(block) => {
+                debug!("block already exists as failed in the DB, inserting successful resolve and block metadata");
+                db::insert_first_successful_resolve_into_db(
+                    conn,
+                    &block,
+                    block_stat,raw_block,Utc::now().naive_utc()
+                ).context("unable to insert succesful resolve")?;
+
+                insert_unixfs_things(conn,&block,heur,typ,files_stat,object_stat,links).context("unable to insert UnixFS-related things")?;
+            }
         }
 
-        debug!("inserting object links...");
-        db::insert_object_links(&conn, &block, links)
+        Ok(())
     })
     .context("unable to insert")?;
 
@@ -562,17 +604,70 @@ fn process_single_cid(
     Ok(Res::Ok)
 }
 
-fn insert_timeout(conn: &PgConnection, cid_string: &str, codec: &model::Codec) -> Result<()> {
+fn insert_unixfs_things(
+    conn: &PgConnection,
+    block: &Block,
+    heur: Option<FileHeuristics>,
+    typ: &UnixFSType,
+    files_stat: FilesStatResponse,
+    object_stat: ObjectStatResponse,
+    links: ObjectLinksResponse,
+) -> Result<()> {
+    debug!("inserting UnixFS block...");
+    let unixfs_block = db::insert_unixfs_block(conn, &block, typ.id, files_stat, object_stat)
+        .context("unable to insert UnixFS block")?;
+    debug!("inserted UnixFS block as {:?}", unixfs_block);
+
+    if let Some(heuristics) = heur {
+        debug!("inserting file heuristics...");
+        let heuristics = db::insert_file_heuristics(conn, &block, heuristics)
+            .context("unable to insert heuristics")?;
+        debug!("inserted heuristics as {:?}", heuristics);
+    }
+
+    debug!("inserting object links...");
+    db::insert_object_links(conn, &block, links).context("unable to insert object links")?;
+
+    Ok(())
+}
+
+fn insert_timeout(
+    conn: &PgConnection,
+    cid_string: &str,
+    codec: &model::Codec,
+    block_status: BlockStatus,
+) -> Result<()> {
     conn.transaction::<_, Error, _>(|| {
-        debug!("inserting failed block");
-        let block = db::insert_failed_block_into_db(
-            &conn,
-            cid_string,
-            codec.id,
-            &*BLOCK_ERROR_FAILED_TO_GET_BLOCK_DEADLINE_EXCEEDED,
-            Utc::now().naive_utc(),
-        )?;
-        debug!("inserted block as {:?}", block);
+        match block_status {
+            BlockStatus::Missing => {
+                debug!("inserting failed block");
+                let block = db::insert_failed_block_into_db(
+                    &conn,
+                    cid_string,
+                    codec.id,
+                    &*BLOCK_ERROR_FAILED_TO_GET_BLOCK_DEADLINE_EXCEEDED,
+                    Utc::now().naive_utc(),
+                )?;
+                debug!("inserted block as {:?}", block);
+            }
+            BlockStatus::BlockExistsUnixFSExists(block, _)
+            | BlockStatus::BlockExistsUnixFSMissing(block)
+            | BlockStatus::FailedUnixFSExists(block, _, _)
+            | BlockStatus::FailedUnixFSMissing(block, _)
+            | BlockStatus::SuccessfulUnixFSExists(block, _, _)
+            | BlockStatus::SuccessfulUnixFSMissing(block, _)
+            | BlockStatus::SuccessfulAndFailedUnixFSExists(block, _, _, _)
+            | BlockStatus::SuccessfulAndFailedUnixFSMissing(block, _, _) => {
+                debug!("inserting failed resolve for existing block {:?}", block);
+                db::insert_failed_resolve_into_db(
+                    conn,
+                    &block,
+                    &*BLOCK_ERROR_FAILED_TO_GET_BLOCK_DEADLINE_EXCEEDED,
+                    Utc::now().naive_utc(),
+                )?;
+                debug!("inserted successfully");
+            }
+        }
 
         Ok(())
     })

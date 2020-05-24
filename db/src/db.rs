@@ -1,20 +1,94 @@
 use crate::model::*;
-use diesel::expression::exists::exists;
 use diesel::prelude::*;
-use diesel::select;
 use diesel::PgConnection;
 use failure::ResultExt;
 use ipfs_api::response;
 use ipfs_resolver_common::Result;
 
-pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<bool> {
+/// Tracks the current status of a block in the database.
+#[derive(Clone, Debug)]
+pub enum BlockStatus {
+    Missing,
+    BlockExistsUnixFSMissing(Block),
+    BlockExistsUnixFSExists(Block, UnixFSBlock),
+    SuccessfulUnixFSMissing(Block, Vec<SuccessfulResolve>),
+    SuccessfulUnixFSExists(Block, Vec<SuccessfulResolve>, UnixFSBlock),
+    FailedUnixFSMissing(Block, Vec<FailedResolve>),
+    FailedUnixFSExists(Block, Vec<FailedResolve>, UnixFSBlock),
+    SuccessfulAndFailedUnixFSMissing(Block, Vec<SuccessfulResolve>, Vec<FailedResolve>),
+    SuccessfulAndFailedUnixFSExists(
+        Block,
+        Vec<SuccessfulResolve>,
+        Vec<FailedResolve>,
+        UnixFSBlock,
+    ),
+}
+
+pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<BlockStatus> {
     use crate::schema::blocks::dsl::*;
+    use crate::schema::failed_resolves::dsl::*;
+    use crate::schema::successful_resolves::dsl::*;
+    use crate::schema::unixfs_blocks::dsl::*;
 
-    let res = select(exists(blocks.filter(base32_cidv1.eq(cid))))
-        .get_result(conn)
-        .context("unable to query DB")?;
+    let results: Vec<Block> = crate::schema::blocks::dsl::blocks
+        .filter(base32_cidv1.eq(cid))
+        .load::<Block>(conn)
+        .context("unable to query DB for blocks")?;
+    if results.is_empty() {
+        return Ok(BlockStatus::Missing);
+    }
+    let block = results[0].clone();
 
-    Ok(res)
+    let succs: Vec<SuccessfulResolve> = successful_resolves
+        .filter(crate::schema::successful_resolves::dsl::block_id.eq(block.id))
+        .load(conn)
+        .context("unable to load successful resolves")?;
+    let failed: Vec<FailedResolve> = failed_resolves
+        .filter(crate::schema::failed_resolves::dsl::block_id.eq(block.id))
+        .load(conn)
+        .context("unable to load failed resolves")?;
+    let unixfs_block: Option<UnixFSBlock> = unixfs_blocks
+        .find(block.id)
+        .first(conn)
+        .optional()
+        .context("unable to load block stat")?;
+
+    if !succs.is_empty() {
+        if !failed.is_empty() {
+            if let Some(unixfs_block) = unixfs_block {
+                return Ok(BlockStatus::SuccessfulAndFailedUnixFSExists(
+                    block,
+                    succs,
+                    failed,
+                    unixfs_block,
+                ));
+            }
+            return Ok(BlockStatus::SuccessfulAndFailedUnixFSMissing(
+                block, succs, failed,
+            ));
+        }
+
+        if let Some(unixfs_block) = unixfs_block {
+            return Ok(BlockStatus::SuccessfulUnixFSExists(
+                block,
+                succs,
+                unixfs_block,
+            ));
+        }
+        return Ok(BlockStatus::SuccessfulUnixFSMissing(block, succs));
+    }
+    if !failed.is_empty() {
+        if let Some(unixfs_block) = unixfs_block {
+            return Ok(BlockStatus::FailedUnixFSExists(block, failed, unixfs_block));
+        }
+        return Ok(BlockStatus::FailedUnixFSMissing(block, failed));
+    }
+
+    if let Some(unixfs_block) = unixfs_block {
+        Ok(BlockStatus::BlockExistsUnixFSExists(block, unixfs_block))
+    } else {
+        Ok(BlockStatus::BlockExistsUnixFSMissing(block))
+    }
 }
 
 pub fn count_blocks(conn: &PgConnection) -> Result<i64> {
@@ -144,6 +218,17 @@ pub fn insert_failed_block_into_db(
     Ok(block)
 }
 
+pub fn insert_failed_resolve_into_db(
+    conn: &PgConnection,
+    block: &Block,
+    err: &BlockError,
+    ts: chrono::NaiveDateTime,
+) -> Result<()> {
+    create_failed_resolve(conn, &block.id, &err.id, &ts).context("unable to insert")?;
+
+    Ok(())
+}
+
 pub fn insert_successful_block_into_db(
     conn: &PgConnection,
     cid_string: String,
@@ -162,6 +247,33 @@ pub fn insert_successful_block_into_db(
         .context("unable to insert successful resolve")?;
 
     Ok(block)
+}
+
+pub fn insert_first_successful_resolve_into_db(
+    conn: &PgConnection,
+    block: &Block,
+    block_stat: response::BlockStatResponse,
+    first_bytes: Vec<u8>,
+    ts: chrono::NaiveDateTime,
+) -> Result<()> {
+    create_block_stat(conn, &block.id, &(block_stat.size as i32), &first_bytes)
+        .context("unable to insert block stat")?;
+
+    create_successful_resolve(conn, &block.id, &ts)
+        .context("unable to insert successful resolve")?;
+
+    Ok(())
+}
+
+pub fn insert_additional_successful_resolve_into_db(
+    conn: &PgConnection,
+    block: &Block,
+    ts: chrono::NaiveDateTime,
+) -> Result<()> {
+    create_successful_resolve(conn, &block.id, &ts)
+        .context("unable to insert successful resolve")?;
+
+    Ok(())
 }
 
 pub fn insert_unixfs_block(
