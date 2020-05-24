@@ -11,6 +11,7 @@ table! {
         id -> Int4,
         base32_cidv1 -> Text,
         codec_id -> Int4,
+        cidv1 -> Nullable<Bytea>,
     }
 }
 
@@ -76,6 +77,7 @@ table! {
         referenced_base32_cidv1 -> Text,
         name -> Text,
         size -> Int8,
+        referenced_cidv1 -> Nullable<Bytea>,
     }
 }
 
