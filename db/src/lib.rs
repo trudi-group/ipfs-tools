@@ -46,12 +46,21 @@ pub fn establish_connection() -> Result<PgConnection> {
     Ok(conn)
 }
 
-pub fn canonicalize_cid_from_str(cid: &str) -> Result<String> {
+pub fn canonicalize_cid_from_str_to_cidv1(cid: &str) -> Result<Cid> {
     let provided_cid = Cid::try_from(cid).context("invalid CID")?;
-    Ok(canonicalize_cid(&provided_cid))
+    Ok(canonicalize_cid_to_cidv1(&provided_cid))
 }
 
-pub fn canonicalize_cid(c: &Cid) -> String {
-    let v1_cid = Cid::new_v1(c.codec(), c.hash().to_owned());
+pub fn canonicalize_cid_to_cidv1(c: &Cid) -> Cid {
+    Cid::new_v1(c.codec(), c.hash().to_owned())
+}
+
+pub fn canonicalize_cid_from_str_to_base32_cidv1(cid: &str) -> Result<String> {
+    let provided_cid = Cid::try_from(cid).context("invalid CID")?;
+    Ok(canonicalize_cid_to_base32_cidv1(&provided_cid))
+}
+
+pub fn canonicalize_cid_to_base32_cidv1(c: &Cid) -> String {
+    let v1_cid = canonicalize_cid_to_cidv1(c);
     multibase::encode(multibase::Base::Base32Lower, v1_cid.to_bytes())
 }

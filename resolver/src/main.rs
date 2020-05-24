@@ -448,7 +448,7 @@ fn process_single_cid(
     codec: &model::Codec,
     conn: &PgConnection,
 ) -> Result<Res> {
-    let cid_string = ipfs_resolver_db::canonicalize_cid(&arg_cid);
+    let cid_string = ipfs_resolver_db::canonicalize_cid_to_base32_cidv1(&arg_cid);
     debug!("canonicalized CID to {}", cid_string);
 
     debug!("checking if block already exists...");

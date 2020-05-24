@@ -30,8 +30,11 @@ pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<BlockStatus> {
     use crate::schema::successful_resolves::dsl::*;
     use crate::schema::unixfs_blocks::dsl::*;
 
+    let c = crate::canonicalize_cid_from_str_to_cidv1(cid).context("unable to canonicalize CID")?;
+    debug!("canonicalized CID to {:?} with bytes {:?}", c, c.to_bytes());
+
     let results: Vec<Block> = crate::schema::blocks::dsl::blocks
-        .filter(base32_cidv1.eq(cid))
+        .filter(cidv1.eq(c.to_bytes()))
         .load::<Block>(conn)
         .context("unable to query DB for blocks")?;
     if results.is_empty() {
@@ -91,6 +94,89 @@ pub fn block_exists(conn: &PgConnection, cid: &str) -> Result<BlockStatus> {
     }
 }
 
+/*
+// These functions were only required during a DB migration to translate base32 CIDs into BYTEA
+// versions.
+
+pub fn get_blocks_without_cidv1(
+    conn: &PgConnection,
+    count: i64,
+    offset: i64,
+) -> Result<Vec<Block>> {
+    use crate::schema::blocks::dsl::*;
+
+    let b: Vec<Block> = blocks
+        .filter(cidv1.is_null())
+        .limit(count)
+        .offset(offset)
+        .get_results(conn)?;
+
+    Ok(b)
+}
+
+pub fn update_blocks_with_cidv1(conn: &PgConnection, bs: Vec<Block>) -> Result<()> {
+    use crate::schema::blocks::dsl::*;
+
+    conn.transaction(|| {
+        for b in bs.iter() {
+            let res = diesel::update(b)
+                .set(cidv1.eq(b.cidv1.clone()))
+                .execute(conn)
+                .context(format!("unable to update block {}", b.id))?;
+            if res != 1 {
+                return Err(err_msg(format!(
+                    "update of block {} affected {} rows",
+                    b.id, res
+                )));
+            }
+        }
+
+        Ok(())
+    })
+    .context("unable to perform transaction")?;
+
+    Ok(())
+}
+
+pub fn get_unixfs_links_without_cidv1(conn: &PgConnection, count: i64) -> Result<Vec<UnixFSLink>> {
+    use crate::schema::unixfs_links::dsl::*;
+
+    let l: Vec<UnixFSLink> = unixfs_links
+        .filter(referenced_cidv1.is_null())
+        .limit(count)
+        .get_results(conn)?;
+
+    Ok(l)
+}
+
+pub fn update_unixfs_links_with_cidv1(conn: &PgConnection, ls: Vec<UnixFSLink>) -> Result<()> {
+    use crate::schema::unixfs_links::dsl::*;
+
+    conn.transaction(|| {
+        for l in ls.iter() {
+            let res = diesel::update(l)
+                .set(referenced_cidv1.eq(l.referenced_cidv1.clone()))
+                .execute(conn)
+                .context(format!(
+                    "unable to update unixfs link for block {} with base32_cidv1 {}",
+                    l.parent_block_id, l.referenced_base32_cidv1
+                ))?;
+            if res != 1 {
+                return Err(err_msg(format!(
+                    "update of unixfs link for block {} with base32_cidv1 {} affected {} rows",
+                    l.parent_block_id, l.referenced_base32_cidv1, res
+                )));
+            }
+        }
+
+        Ok(())
+    })
+    .context("unable to perform transaction")?;
+
+    Ok(())
+}
+*/
+
 pub fn count_blocks(conn: &PgConnection) -> Result<i64> {
     use crate::schema::blocks;
 
@@ -129,17 +215,17 @@ pub fn insert_object_links(
     links: response::ObjectLinksResponse,
 ) -> Result<()> {
     for link in links.links {
-        let canonicalized_cid = crate::canonicalize_cid_from_str(&link.hash)
-            .context("unable to canonicalize link CID")?;
-        debug!("canonicalized link CID to {}", canonicalized_cid);
+        let c = crate::canonicalize_cid_from_str_to_cidv1(&link.hash)
+            .context("unable to canonicalize CID")?;
+        debug!("canonicalized CID to {:?} with bytes {:?}", c, c.to_bytes());
         debug!(
-            "inserting link (parent id={}, cid={}, name={}, size={})",
-            block.id, canonicalized_cid, link.name, link.size
+            "inserting link (parent id={}, cid={:?}, name={}, size={})",
+            block.id, c, link.name, link.size
         );
         create_unixfs_link(
             conn,
             &block.id,
-            &canonicalized_cid,
+            &c.to_bytes(),
             &link.name,
             &(link.size as i64),
         )
@@ -210,7 +296,11 @@ pub fn insert_failed_block_into_db(
     err: &BlockError,
     ts: chrono::NaiveDateTime,
 ) -> Result<Block> {
-    let block = create_block(conn, cid_string, &codec_id).context("unable to insert block")?;
+    let c = crate::canonicalize_cid_from_str_to_cidv1(&cid_string)
+        .context("unable to canonicalize CID")?;
+    debug!("canonicalized CID to {:?} with bytes {:?}", c, c.to_bytes());
+
+    let block = create_block(conn, &c.to_bytes(), &codec_id).context("unable to insert block")?;
 
     create_failed_resolve(conn, &block.id, &err.id, &ts)
         .context("unable to insert successful resolve")?;
@@ -237,8 +327,11 @@ pub fn insert_successful_block_into_db(
     first_bytes: Vec<u8>,
     ts: chrono::NaiveDateTime,
 ) -> Result<Block> {
-    let block =
-        create_block(conn, cid_string.as_str(), &codec_id).context("unable to insert block")?;
+    let c = crate::canonicalize_cid_from_str_to_cidv1(&cid_string)
+        .context("unable to canonicalize CID")?;
+    debug!("canonicalized CID to {:?} with bytes {:?}", c, c.to_bytes());
+
+    let block = create_block(conn, &c.to_bytes(), &codec_id).context("unable to insert block")?;
 
     create_block_stat(conn, &block.id, &(block_stat.size as i32), &first_bytes)
         .context("unable to insert block stat")?;
@@ -297,17 +390,10 @@ pub fn insert_unixfs_block(
     Ok(unixfs_block)
 }
 
-fn create_block<'a>(
-    conn: &PgConnection,
-    base32_cidv1: &'a str,
-    codec_id: &'a i32,
-) -> Result<Block> {
+fn create_block<'a>(conn: &PgConnection, cidv1: &'a Vec<u8>, codec_id: &'a i32) -> Result<Block> {
     use crate::schema::blocks;
 
-    let new_block = NewBlock {
-        base32_cidv1,
-        codec_id,
-    };
+    let new_block = NewBlock { cidv1, codec_id };
 
     let inserted_block = diesel::insert_into(blocks::table)
         .values(&new_block)
@@ -412,7 +498,7 @@ fn create_unixfs_block<'a>(
 fn create_unixfs_link<'a>(
     conn: &PgConnection,
     parent_block_id: &'a i32,
-    referenced_base32_cidv1: &'a str,
+    referenced_cidv1: &'a Vec<u8>,
     name: &'a str,
     size: &'a i64,
 ) -> Result<UnixFSLink> {
@@ -420,7 +506,7 @@ fn create_unixfs_link<'a>(
 
     let new_link = NewUnixFSLink {
         parent_block_id,
-        referenced_base32_cidv1,
+        referenced_cidv1,
         name,
         size,
     };

@@ -75,14 +75,14 @@ lazy_static! {
 #[primary_key(id)]
 pub struct Block {
     pub id: i32,
-    pub base32_cidv1: String,
     pub codec_id: i32,
+    pub cidv1: Vec<u8>,
 }
 
 #[derive(Insertable)]
 #[table_name = "blocks"]
 pub struct NewBlock<'a> {
-    pub base32_cidv1: &'a str,
+    pub cidv1: &'a Vec<u8>,
     pub codec_id: &'a i32,
 }
 
@@ -169,19 +169,19 @@ pub struct NewUnixFSBlock<'a> {
 #[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "unixfs_links"]
 #[belongs_to(UnixFSBlock, foreign_key = "parent_block_id")]
-#[primary_key(parent_block_id, referenced_base32_cidv1, name)]
+#[primary_key(parent_block_id, referenced_cidv1, name)]
 pub struct UnixFSLink {
     pub parent_block_id: i32,
-    pub referenced_base32_cidv1: String,
     pub name: String,
     pub size: i64,
+    pub referenced_cidv1: Vec<u8>,
 }
 
 #[derive(Insertable)]
 #[table_name = "unixfs_links"]
 pub struct NewUnixFSLink<'a> {
     pub parent_block_id: &'a i32,
-    pub referenced_base32_cidv1: &'a str,
+    pub referenced_cidv1: &'a Vec<u8>,
     pub name: &'a str,
     pub size: &'a i64,
 }
