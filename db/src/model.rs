@@ -1,6 +1,6 @@
 use crate::schema::*;
 
-#[derive(Identifiable, Queryable, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, PartialEq, Debug, Clone)]
 #[table_name = "codecs"]
 #[primary_key(id)]
 pub struct Codec {
@@ -19,7 +19,7 @@ lazy_static! {
     };
 }
 
-#[derive(Identifiable, Queryable, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, PartialEq, Debug, Clone)]
 #[table_name = "unixfs_types"]
 #[primary_key(id)]
 pub struct UnixFSType {
@@ -54,7 +54,7 @@ lazy_static! {
     };
 }
 
-#[derive(Identifiable, Queryable, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, PartialEq, Debug, Clone)]
 #[table_name = "errors"]
 #[primary_key(id)]
 pub struct BlockError {
@@ -69,7 +69,7 @@ lazy_static! {
     };
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "blocks"]
 #[belongs_to(Codec)]
 #[primary_key(id)]
@@ -86,7 +86,7 @@ pub struct NewBlock<'a> {
     pub codec_id: &'a i32,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "block_stats"]
 #[belongs_to(Block, foreign_key = "block_id")]
 #[primary_key(block_id)]
@@ -104,7 +104,7 @@ pub struct NewBlockStat<'a> {
     pub first_bytes: &'a Vec<u8>,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "failed_resolves"]
 #[belongs_to(Block, foreign_key = "block_id")]
 #[belongs_to(BlockError, foreign_key = "error_id")]
@@ -124,7 +124,7 @@ pub struct NewFailedResolve<'a> {
     pub ts: &'a chrono::NaiveDateTime,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "successful_resolves"]
 #[belongs_to(Block, foreign_key = "block_id")]
 #[primary_key(id)]
@@ -141,7 +141,7 @@ pub struct NewSuccessfulResolve<'a> {
     pub ts: &'a chrono::NaiveDateTime,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "unixfs_blocks"]
 #[belongs_to(BlockStat, foreign_key = "block_id")]
 #[belongs_to(UnixFSType, foreign_key = "unixfs_type_id")]
@@ -166,7 +166,7 @@ pub struct NewUnixFSBlock<'a> {
     pub num_links: &'a i32,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "unixfs_links"]
 #[belongs_to(UnixFSBlock, foreign_key = "parent_block_id")]
 #[primary_key(parent_block_id, referenced_base32_cidv1, name)]
@@ -186,7 +186,7 @@ pub struct NewUnixFSLink<'a> {
     pub size: &'a i64,
 }
 
-#[derive(Identifiable, Queryable, Associations, PartialEq, Debug)]
+#[derive(Identifiable, Queryable, Associations, PartialEq, Debug, Clone)]
 #[table_name = "unixfs_file_heuristics"]
 #[belongs_to(UnixFSBlock, foreign_key = "block_id")]
 #[primary_key(block_id)]
