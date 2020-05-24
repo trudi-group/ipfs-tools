@@ -9,9 +9,8 @@ table! {
 table! {
     blocks (id) {
         id -> Int4,
-        base32_cidv1 -> Text,
         codec_id -> Int4,
-        cidv1 -> Nullable<Bytea>,
+        cidv1 -> Bytea,
     }
 }
 
