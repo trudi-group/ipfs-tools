@@ -83,10 +83,14 @@ async fn main() -> Result<()> {
                 num_connected_not_found.inc();
             }
             println!(
-                "{} {} {:25}",
+                "{} {} {:38} {:25}",
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
+                match &wl.address {
+                    Some(address) => address.to_string(),
+                    None => "".to_string(),
+                },
                 if wl.connect_event_peer_found.unwrap() {
                     "CONNECTED; FOUND"
                 } else {
@@ -100,10 +104,14 @@ async fn main() -> Result<()> {
                 num_disconnected_not_found.inc();
             }
             println!(
-                "{} {} {:25}",
+                "{} {} {:38} {:25}",
                 wl.timestamp
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 wl.peer,
+                match &wl.address {
+                    Some(address) => address.to_string(),
+                    None => "".to_string(),
+                },
                 if wl.connect_event_peer_found.unwrap() {
                     "DISCONNECTED; FOUND"
                 } else {
@@ -135,10 +143,14 @@ async fn main() -> Result<()> {
                         }
 
                         println!(
-                            "{} {} {:4} {:25} ({:10}) {}",
+                            "{} {} {:38} {:4} {:25} ({:10}) {}",
                             wl.timestamp
                                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                             wl.peer,
+                            match &wl.address {
+                                Some(address) => address.to_string(),
+                                None => "".to_string(),
+                            },
                             match wl.full_want_list {
                                 Some(f) =>
                                     if f {

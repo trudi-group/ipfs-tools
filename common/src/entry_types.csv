@@ -4,4 +4,4 @@ id,name,text
 3,WANT_BLOCK_SEND_DONT_HAVE,"The peer wants the requested CID as block data or a DONT_HAVE if we cannot deliver."
 4,WANT_HAVE,"The peer wants to receive a WANT_HAVE message if we have the requested block."
 5,WANT_HAVE_SEND_DONT_HAVE,"The peer wants a WANT_HAVE message if we have the requested block or a DONT_HAVE if we do not."
-6,SYNTHETIC_CANCEL,"Synthetic CANCEL generated from a DISCONNECTED_FOUND event."
+6,SYNTHETIC_CANCEL,Synthetic CANCEL generated from a DISCONNECTED_FOUND event followed by a CONNECTED and a wantlist message.

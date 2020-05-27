@@ -1060,7 +1060,7 @@ dependencies = [
  "hyper 0.13.5",
  "hyper-multipart-rfc7578",
  "hyper-tls",
- "parity-multiaddr",
+ "parity-multiaddr 0.7.3",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -1125,6 +1125,7 @@ dependencies = [
  "failure",
  "flexi_logger",
  "log",
+ "parity-multiaddr 0.9.0",
  "serde",
 ]
 
@@ -1469,6 +1470,24 @@ dependencies = [
  "byteorder 1.3.4",
  "data-encoding",
  "parity-multihash",
+ "percent-encoding",
+ "serde",
+ "static_assertions",
+ "unsigned-varint",
+ "url",
+]
+
+[[package]]
+name = "parity-multiaddr"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12ca96399f4a01aa89c59220c4f52ac371940eb4e53e3ce990da796f364bdf69"
+dependencies = [
+ "arrayref",
+ "bs58",
+ "byteorder 1.3.4",
+ "data-encoding",
+ "multihash",
  "percent-encoding",
  "serde",
  "static_assertions",

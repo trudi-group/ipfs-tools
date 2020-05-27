@@ -1,7 +1,9 @@
 use crate::Result;
 use failure::err_msg;
+use parity_multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::mem;
 
 /// Constants for the `want_type` field of an `JSONWantlistEntry`.
 pub const JSON_WANT_TYPE_BLOCK: i32 = 0;
@@ -34,6 +36,7 @@ pub struct JSONWantlistEntry {
 pub struct JSONMessage {
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub peer: String,
+    pub address: Option<Multiaddr>,
     pub received_entries: Option<Vec<JSONWantlistEntry>>,
     pub full_want_list: Option<bool>,
     pub peer_connected: Option<bool>,
@@ -82,6 +85,7 @@ pub struct CSVWantlistEntry {
     pub timestamp_seconds: i64,
     pub timestamp_subsec_milliseconds: u32,
     pub peer_id: String,
+    pub address: String,
     pub priority: i32,
     pub entry_type: i32,
     pub cid: String,
@@ -104,6 +108,10 @@ impl CSVWantlistEntry {
                 timestamp_seconds: message_timestamp_seconds,
                 timestamp_subsec_milliseconds: message_timestamp_subsec_millis,
                 peer_id: message.peer.clone(),
+                address: match &message.address {
+                    Some(address) => address.to_string(),
+                    None => "".to_string(),
+                },
                 priority: 0,
                 entry_type: CSV_ENTRY_TYPE_SYNTHETIC_CANCEL,
                 cid: e.cid,
@@ -119,6 +127,10 @@ impl CSVWantlistEntry {
                 let timestamp_seconds = timestamp.timestamp();
                 let timestamp_subsec_millis = timestamp.timestamp_subsec_millis();
                 let full_want_list = message.full_want_list;
+                let address = match &message.address {
+                    Some(address) => address.to_string(),
+                    None => "".to_string(),
+                };
 
                 let csv_entries = entries
                     .into_iter()
@@ -140,6 +152,7 @@ impl CSVWantlistEntry {
                         timestamp_seconds,
                         timestamp_subsec_milliseconds: timestamp_subsec_millis,
                         peer_id: peer.clone(),
+                        address: address.clone(),
                         priority: entry.priority,
                         entry_type: if entry.cancel {
                             CSV_ENTRY_TYPE_CANCEL
@@ -179,6 +192,7 @@ pub struct CSVConnectionEvent {
     pub timestamp_seconds: i64,
     pub timestamp_subsec_millis: u32,
     pub peer_id: String,
+    pub address: String,
     pub event_type: i32,
 }
 
@@ -192,6 +206,10 @@ impl CSVConnectionEvent {
                         timestamp_seconds: message.timestamp.timestamp(),
                         timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
                         peer_id: message.peer,
+                        address: match &message.address {
+                            Some(address) => address.to_string(),
+                            None => "".to_string(),
+                        },
                         event_type: if found {
                             CSV_CONNECTION_EVENT_DISCONNECTED_FOUND
                         } else {
@@ -210,6 +228,10 @@ impl CSVConnectionEvent {
                         timestamp_seconds: message.timestamp.timestamp(),
                         timestamp_subsec_millis: message.timestamp.timestamp_subsec_millis(),
                         peer_id: message.peer,
+                        address: match &message.address {
+                            Some(address) => address.to_string(),
+                            None => "".to_string(),
+                        },
                         event_type: if found {
                             CSV_CONNECTION_EVENT_CONNECTED_FOUND
                         } else {
@@ -238,9 +260,23 @@ pub struct WantlistEntry {
     //send_dont_have: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct Ledger {
+    connection_count: i32,
+    wanted_entries: Vec<WantlistEntry>,
+    wanted_entries_before_disconnect: Option<Vec<WantlistEntry>>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Wantlist {
-    peers: HashMap<String, Vec<WantlistEntry>>,
+    peers: HashMap<String, Ledger>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IngestResult {
+    pub missing_ledger: bool, // This means we are missing a ledger entry for the peer, not generally a mismatch between found and our state.
+    pub entries_canceled_because_full_want_list: Option<Vec<WantlistEntry>>,
+    pub entries_canceled_because_new_connection: Option<Vec<WantlistEntry>>,
 }
 
 impl Wantlist {
@@ -250,45 +286,249 @@ impl Wantlist {
         }
     }
 
-    pub fn ingest(&mut self, msg: &JSONMessage) -> Result<Option<Vec<WantlistEntry>>> {
+    pub fn ingest(
+        &mut self,
+        msg: &JSONMessage,
+        allow_empty_full_want_list: bool,
+        allow_empty_connection_event: bool,
+    ) -> Result<IngestResult> {
+        let mut missing_ledger = false;
         match &msg.received_entries {
             Some(entries) => {
-                let ledger = self.peers.entry(msg.peer.clone()).or_default();
+                // This is a wantlist message.
+                let ledger = self.peers.entry(msg.peer.clone()).or_insert_with(|| {
+                    debug!("received wantlist from {} ({:?}), but don't have a ledger for that peer. Starting empty one with one connection.",msg.peer,msg.address);
+                    missing_ledger = true;
+                    Ledger{connection_count:1,wanted_entries:Default::default(),wanted_entries_before_disconnect:Default::default()}
+                });
+                assert!(ledger.connection_count > 0);
 
                 match &msg.full_want_list {
-                    Some(full) => {
-                        match full {
-                            true => {
-                                // TODO we can speed this up by splitting wants/cancels and replacing with wants.
-                                ledger.truncate(0);
-                            }
-                            false => {}
+                    Some(full) => match full {
+                        true => {
+                            let (new_wants, _) = Self::split_wants_cancels(&entries);
+                            let old_wants = mem::replace(
+                                &mut ledger.wanted_entries,
+                                new_wants
+                                    .iter()
+                                    .map(|c| WantlistEntry {
+                                        cid: c.cid.path.clone(),
+                                    })
+                                    .collect(),
+                            );
+                            ledger
+                                .wanted_entries
+                                .sort_unstable_by(|e1, e2| e1.cid.cmp(&e2.cid));
+
+                            assert!(
+                                !(!old_wants.is_empty()
+                                    && ledger.wanted_entries_before_disconnect.is_some())
+                            );
+                            let old_wants = {
+                                match ledger.wanted_entries_before_disconnect.take() {
+                                    Some(entries) => entries,
+                                    None => old_wants,
+                                }
+                            };
+                            let dropped_wants: Vec<WantlistEntry> = old_wants
+                                .into_iter()
+                                .filter(|e| {
+                                    new_wants.iter().find(|n| n.cid.path == e.cid).is_none()
+                                })
+                                .collect();
+                            return Ok(IngestResult {
+                                missing_ledger,
+                                entries_canceled_because_full_want_list: Some(dropped_wants),
+                                entries_canceled_because_new_connection: None,
+                            });
                         }
-                        Self::apply_new_entries(ledger, entries)?;
-                    }
+                        false => {
+                            assert!(
+                                !(ledger.wanted_entries_before_disconnect.is_some()
+                                    && !ledger.wanted_entries.is_empty())
+                            );
+                            Self::apply_new_entries(
+                                &mut ledger.wanted_entries,
+                                entries,
+                                &msg.peer,
+                            )?;
+                            let old_wants = ledger.wanted_entries_before_disconnect.take();
+                            match old_wants {
+                                Some(old_wants) => {
+                                    let dropped_wants: Vec<WantlistEntry> = old_wants
+                                        .into_iter()
+                                        .filter(|e| {
+                                            ledger
+                                                .wanted_entries
+                                                .iter()
+                                                .find(|n| n.cid == e.cid)
+                                                .is_none()
+                                        })
+                                        .collect();
+                                    return Ok(IngestResult {
+                                        missing_ledger,
+                                        entries_canceled_because_full_want_list: None,
+                                        entries_canceled_because_new_connection: Some(
+                                            dropped_wants,
+                                        ),
+                                    });
+                                }
+                                None => {}
+                            }
+                        }
+                    },
                     None => {
-                        debug!("got empty full_want_list, assuming incremental.");
-                        Self::apply_new_entries(ledger, entries)?;
+                        if allow_empty_full_want_list {
+                            debug!("got empty full_want_list, assuming incremental.");
+                            assert!(
+                                !(ledger.wanted_entries_before_disconnect.is_some()
+                                    && !ledger.wanted_entries.is_empty())
+                            );
+                            Self::apply_new_entries(
+                                &mut ledger.wanted_entries,
+                                entries,
+                                &msg.peer,
+                            )?;
+                            let old_wants = ledger.wanted_entries_before_disconnect.take();
+                            match old_wants {
+                                Some(old_wants) => {
+                                    let dropped_wants: Vec<WantlistEntry> = old_wants
+                                        .into_iter()
+                                        .filter(|e| {
+                                            ledger
+                                                .wanted_entries
+                                                .iter()
+                                                .find(|n| n.cid == e.cid)
+                                                .is_none()
+                                        })
+                                        .collect();
+                                    return Ok(IngestResult {
+                                        missing_ledger,
+                                        entries_canceled_because_full_want_list: None,
+                                        entries_canceled_because_new_connection: Some(
+                                            dropped_wants,
+                                        ),
+                                    });
+                                }
+                                None => {}
+                            }
+                        } else {
+                            error!("got empty full_want_list, but is not allowed.");
+                            return Err(err_msg("got empty full_want_list, should be set"));
+                        }
                     }
                 }
             }
             None => {
+                // This is a connection event.
                 match &msg.peer_disconnected {
                     Some(disconnected) => {
+                        let found = msg.connect_event_peer_found.ok_or_else(|| {err_msg("message had peer_disconnected set but connect_event_peer_found missing")})?;
+
                         if *disconnected {
-                            // Disconnected, clear our entries for this peer.
-                            return Ok(self.peers.remove(&msg.peer));
+                            // Disconnected, decrement connection counter.
+                            let ledger = self.peers.entry(msg.peer.clone()).or_insert_with(|| {
+                                if found {
+                                    debug!("disconnect event had connect_event_peer_found=true, but we don't have a ledger for peer {}",msg.peer);
+                                }
+                                // If not present, we return a fresh entry with one connection, because we decrement the counter right away.
+                                missing_ledger = true;
+                                Ledger{connection_count:1,wanted_entries:Default::default(),wanted_entries_before_disconnect:Default::default()}
+                            });
+
+                            ledger.connection_count -= 1;
+                            assert!(ledger.connection_count >= 0);
+
+                            if ledger.connection_count == 0 {
+                                assert!(
+                                    ledger.wanted_entries_before_disconnect.is_none()
+                                        || ledger.wanted_entries.is_empty()
+                                );
+                                if !ledger.wanted_entries_before_disconnect.is_none() {
+                                    ledger.wanted_entries_before_disconnect =
+                                        Some(mem::take(&mut ledger.wanted_entries));
+                                }
+                            }
                         }
                     }
-                    None => warn!(
-                        "got empty message and no connection event from message {:?}",
-                        msg
-                    ),
+                    None => {
+                        if allow_empty_connection_event {
+                            warn!(
+                                "got empty message and no connection event from message {:?}",
+                                msg
+                            );
+                        } else {
+                            error!(
+                                "got empty message and no connection event from message {:?}",
+                                msg
+                            );
+                            return Err(err_msg("got no wantlist entries and no connection event"));
+                        }
+                    }
+                }
+
+                match &msg.peer_connected {
+                    Some(connected) => {
+                        let found = msg.connect_event_peer_found.ok_or_else(|| {err_msg("message had peer_connected set but connect_event_peer_found missing")})?;
+
+                        if *connected {
+                            // Connected, increment connection counter :)
+                            let ledger = self.peers.get(&msg.peer);
+                            match ledger {
+                                Some(ledger) => {
+                                    if found && ledger.connection_count == 0 {
+                                        warn!("connect event had connect_event_peer_found=true, but our ledger has zero connections for peer {}",msg.peer);
+                                    } else if !found && ledger.connection_count > 0 {
+                                        warn!("connect event had connect_event_peer_found=false, but we have a ledger with at least one connection for peer {}",msg.peer);
+                                    }
+                                }
+                                None => {
+                                    if found {
+                                        warn!("connect event had connect_event_peer_found=true, but we don't have a ledger for peer {}",msg.peer);
+                                    }
+                                }
+                            }
+
+                            let ledger =
+                                self.peers
+                                    .entry(msg.peer.clone())
+                                    .or_insert_with(|| Ledger {
+                                        connection_count: 0,
+                                        wanted_entries: Default::default(),
+                                        wanted_entries_before_disconnect: Default::default(),
+                                    });
+
+                            ledger.connection_count += 1;
+                            assert!(ledger.connection_count > 0);
+                            assert!(
+                                !(ledger.wanted_entries_before_disconnect.is_some()
+                                    && !ledger.wanted_entries.is_empty())
+                            );
+                        }
+                    }
+                    None => {
+                        if allow_empty_connection_event {
+                            warn!(
+                                "got empty message and no connection event from message {:?}",
+                                msg
+                            );
+                        } else {
+                            error!(
+                                "got empty message and no connection event from message {:?}",
+                                msg
+                            );
+                            return Err(err_msg("got no wantlist entries and no connection event"));
+                        }
+                    }
                 }
             }
         }
 
-        Ok(None)
+        Ok(IngestResult {
+            missing_ledger,
+            entries_canceled_because_full_want_list: None,
+            entries_canceled_because_new_connection: None,
+        })
     }
 
     fn split_wants_cancels(
@@ -302,14 +542,20 @@ impl Wantlist {
     fn apply_new_entries(
         current_entries: &mut Vec<WantlistEntry>,
         new_entries: &[JSONWantlistEntry],
+        peer: &str,
     ) -> Result<()> {
         let (wants, cancels) = Self::split_wants_cancels(new_entries);
 
         for cancel in cancels {
             if let Ok(i) = current_entries.binary_search_by(|e| e.cid.cmp(&cancel.cid.path)) {
                 current_entries.remove(i);
+            } else {
+                // Not found.
+                debug!(
+                    "got CANCEL for CID {} from peer {}, but don't have an entry for that",
+                    cancel.cid.path, peer
+                )
             }
-            // Else not found, but doesn't matter.
         }
 
         for want in wants {
