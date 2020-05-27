@@ -6,11 +6,10 @@ extern crate log;
 use ipfs_resolver_db::db;
 use ipfs_resolver_db::model;
 
-use ipfs_resolver_common::{logging, Result};
+use ipfs_resolver_common::{ipfs, logging, Result};
 
 mod unixfs;
 mod heuristics;
-mod ipfs;
 
 use crate::ipfs::ResolveError;
 use chrono::Utc;

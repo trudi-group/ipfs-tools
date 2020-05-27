@@ -1,7 +1,6 @@
-use crate::ipfs;
 use chardetng::EncodingDetector;
 use failure::ResultExt;
-use ipfs_resolver_common::Result;
+use ipfs_resolver_common::{ipfs, Result};
 use ipfs_resolver_db::db::{ChardetHeuristics, FileHeuristics};
 use reqwest::Url;
 

@@ -5,7 +5,7 @@ use ipfs_api::response;
 use reqwest::Url;
 
 #[derive(Fail, Debug)]
-pub(crate) enum ResolveError {
+pub enum ResolveError {
     #[fail(display = "context deadline exceeded")]
     ContextDeadlineExceeded,
     #[fail(display = "reqwest unable to perform request: '{}'", _0)]
@@ -20,9 +20,9 @@ pub(crate) enum ResolveError {
     Other(Error),
 }
 
-pub(crate) type Result<T> = std::result::Result<T, ResolveError>;
+pub type Result<T> = std::result::Result<T, ResolveError>;
 
-pub(crate) fn query_ipfs_id(ipfs_base: &Url) -> Result<String> {
+pub fn query_ipfs_id(ipfs_base: &Url) -> Result<String> {
     let mut url = ipfs_base.clone();
     url.set_path("api/v0/id");
 
@@ -31,7 +31,7 @@ pub(crate) fn query_ipfs_id(ipfs_base: &Url) -> Result<String> {
     Ok(id.id)
 }
 
-pub(crate) fn query_ipfs_for_cat(
+pub fn query_ipfs_for_cat(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -66,7 +66,7 @@ pub(crate) fn query_ipfs_for_cat(
     query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) fn query_ipfs_for_block_get(
+pub fn query_ipfs_for_block_get(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -86,7 +86,7 @@ pub(crate) fn query_ipfs_for_block_get(
     query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) fn query_ipfs_for_object_data(
+pub fn query_ipfs_for_object_data(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,
@@ -106,7 +106,7 @@ pub(crate) fn query_ipfs_for_object_data(
     query_ipfs_api_raw(url, Duration::from_secs(300))
 }
 
-pub(crate) fn query_ipfs_for_metadata(
+pub fn query_ipfs_for_metadata(
     ipfs_base: &Url,
     resolve_timeout: u16,
     cid_string: &str,

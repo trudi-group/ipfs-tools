@@ -3,6 +3,7 @@ extern crate log;
 
 use failure::Error;
 
+pub mod ipfs;
 pub mod logging;
 pub mod wantlist;
 
