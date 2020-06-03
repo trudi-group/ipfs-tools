@@ -1,2 +1,2 @@
 [workspace]
-members=["db","resolver","db-exporter","common","wantlist-client","ipfs-json-to-csv","wantlist-client-lib"]
+members=["db","resolver","db-exporter","common","wantlist-client","ipfs-json-to-csv","gateway-finder","wantlist-client-lib"]
