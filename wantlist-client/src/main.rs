@@ -9,10 +9,9 @@ use failure::ResultExt;
 use std::env;
 use tokio::net::TcpStream;
 
-use crate::net::Connection;
 use ipfs_resolver_common::{logging, wantlist, Result};
+use wantlist_client_lib::net::Connection;
 
-mod net;
 mod prom;
 
 #[tokio::main]

@@ -279,9 +279,9 @@ dependencies = [
 
 [[package]]
 name = "cid"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50720fbd95ce5d9e51b6b81b7e4f5f93efdefb4b83aa46200dfc9fdfcd84b379"
+checksum = "8709d481fb78b9808f34a1b4b4fadd08a15a0971052c18bc2b751faefaed595e"
 dependencies = [
  "multibase",
  "multihash",
@@ -858,7 +858,7 @@ dependencies = [
  "indexmap",
  "log",
  "slab",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tokio-util 0.3.1",
 ]
 
@@ -980,7 +980,7 @@ dependencies = [
  "net2",
  "pin-project",
  "time",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tower-service",
  "want 0.3.0",
 ]
@@ -1007,7 +1007,7 @@ dependencies = [
  "bytes 0.5.4",
  "hyper 0.13.5",
  "native-tls",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tokio-tls",
 ]
 
@@ -1048,9 +1048,9 @@ dependencies = [
 
 [[package]]
 name = "ipfs-api"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e93cd854b7d68085b438401625317dc38b88a7c586cdea09ccdbe19cb49ac55b"
+checksum = "f9e7fbfe5c8cb04c27fe20bf2624354f4d102652fd465a297a924c24e60aba4a"
 dependencies = [
  "bytes 0.5.4",
  "dirs",
@@ -1064,7 +1064,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tokio-util 0.2.0",
  "walkdir",
 ]
@@ -1991,7 +1991,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "time",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tokio-tls",
  "url",
  "wasm-bindgen",
@@ -2359,9 +2359,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.18"
+version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ef16d072d2b6dc8b4a56c70f5c5ced1a37752116f8e7c1e80c659aa7cb6713"
+checksum = "d099fa27b9702bed751524694adbe393e18b36b204da91eb1cbbbbb4a5ee2d58"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -2508,7 +2508,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bde02a3a5291395f59b06ec6945a3077602fac2b07eeeaf0dee2122f3619828"
 dependencies = [
  "native-tls",
- "tokio 0.2.18",
+ "tokio 0.2.21",
 ]
 
 [[package]]
@@ -2522,7 +2522,7 @@ dependencies = [
  "futures-sink",
  "log",
  "pin-project-lite",
- "tokio 0.2.18",
+ "tokio 0.2.21",
 ]
 
 [[package]]
@@ -2536,7 +2536,7 @@ dependencies = [
  "futures-sink",
  "log",
  "pin-project-lite",
- "tokio 0.2.18",
+ "tokio 0.2.21",
 ]
 
 [[package]]
@@ -2680,21 +2680,31 @@ dependencies = [
 name = "wantlist-client"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.4",
  "chrono",
  "dotenv",
  "failure",
  "flexi_logger",
- "futures 0.3.5",
  "futures-util",
  "ipfs-resolver-common",
  "lazy_static",
  "log",
  "prometheus",
  "prometheus_exporter",
- "serde",
+ "tokio 0.2.21",
+ "wantlist-client-lib",
+]
+
+[[package]]
+name = "wantlist-client-lib"
+version = "0.1.0"
+dependencies = [
+ "bytes 0.5.4",
+ "futures 0.3.5",
+ "futures-util",
+ "ipfs-resolver-common",
+ "log",
  "serde_json",
- "tokio 0.2.18",
+ "tokio 0.2.21",
  "tokio-util 0.3.1",
 ]
 

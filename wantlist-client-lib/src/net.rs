@@ -10,13 +10,13 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-pub(crate) struct Connection {
+pub struct Connection {
     pub remote: SocketAddr,
     pub messages_in: Receiver<JSONMessage>,
 }
 
 impl Connection {
-    pub(crate) async fn new(conn: TcpStream) -> Result<Connection> {
+    pub async fn new(conn: TcpStream) -> Result<Connection> {
         let remote = conn.peer_addr()?;
         // Set up length-delimited frames
         let framed = Framed::new(
