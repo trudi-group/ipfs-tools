@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 
+mod conntrack;
+
 use clap::{App, Arg, SubCommand};
 use failure::{err_msg, ResultExt};
 use flate2::read::GzDecoder;
@@ -9,6 +11,8 @@ use flate2::Compression;
 use ipfs_resolver_common::{logging, wantlist, Result};
 use std::io;
 use std::path::PathBuf;
+use crate::conntrack::ConnectionDurationTracker;
+
 
 fn main() -> Result<()> {
     let matches = App::new("IPFS wantlist JSON to CSV converter")
@@ -99,6 +103,7 @@ fn do_transform_single_file(
     allow_empty_full_want_list: bool,
     wl: &mut wantlist::Wantlist,
     current_message_id: &mut i64,
+    conn_tracker: &mut ConnectionDurationTracker,
 ) -> Result<(
     Option<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>,
     i32,
@@ -123,6 +128,12 @@ fn do_transform_single_file(
         }
         last_message_ts.replace(message.timestamp);
 
+        // Add to connection tracker.
+        conn_tracker
+            .push(&message)
+            .context("unable to track connection duration")?;
+
+        // Update simulated wantlists.
         let ingest_result = wl.ingest(&message, allow_empty_full_want_list, false)?;
         if ingest_result.missing_ledger {
             missing_leders += 1;
@@ -180,6 +191,7 @@ fn do_transform_single_file(
             full_want_list_synthetic_cancels | connection_synthetic_cancels
         };
 
+        // Serialize to CSV.
         match message.received_entries {
             Some(_) => {
                 debug!("processing as wantlist entries");
@@ -219,6 +231,8 @@ fn do_transform(
 ) -> Result<()> {
     let mut wl = wantlist::Wantlist::new();
     let mut current_message_id: i64 = 0;
+    let mut conn_tracker = ConnectionDurationTracker::new();
+    let mut final_ts = None;
 
     let outdir = PathBuf::from(output_dir);
     let conn_outdir = PathBuf::from(conn_out_dir);
@@ -273,11 +287,15 @@ fn do_transform(
                     allow_empty_full_want_list,
                     &mut wl,
                     &mut current_message_id,
+                    &mut conn_tracker,
                 )
                 .context(format!("unable to process file {}", path.display()))?;
 
                 match timestamps {
-                    Some((first, last)) => info!("first ts: {}, last ts: {}", first, last),
+                    Some((first, last)) => {
+                        info!("first ts: {}, last ts: {}", first, last);
+                        final_ts.replace(last);
+                    }
                     None => info!("empty file?"),
                 }
                 info!("{} missing ledgers", missing_ledgers);
@@ -287,6 +305,37 @@ fn do_transform(
             // thereby preventing its contents from matching
             Err(e) => return Err(err_msg(format!("unable to traverse glob: {:?}", e))),
         }
+    }
+
+    info!("finalizing connection tracker...");
+    if let Some(ts) = final_ts {
+        let connections = conn_tracker.finalize(ts);
+
+        let conn_output_file_path = conn_outdir.with_file_name("connections.csv.gz");
+        debug!(
+            "connection output file path is {}",
+            conn_output_file_path.display()
+        );
+        let f = GzEncoder::new(
+            io::BufWriter::new(
+                std::fs::File::create(conn_output_file_path)
+                    .context("unable to open connection output file for writing")?,
+            ),
+            Compression::default(),
+        );
+
+        let mut w = csv::Writer::from_writer(f);
+
+        info!("writing connections CSV...");
+        for (peer_id, conns) in connections.into_iter() {
+            for c in conns.into_iter() {
+                let to_encode = c.to_csv(peer_id.clone());
+                w.serialize(to_encode)
+                    .context("unable to serialize connection metadata")?;
+            }
+        }
+    } else {
+        warn!("missing final timestamp, unable to finalize")
     }
 
     Ok(())
@@ -302,3 +351,4 @@ fn print_lookup_tables() {
     println!("Entry types:");
     println!("{}", wantlist::entry_types_csv())
 }
+
