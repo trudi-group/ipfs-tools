@@ -45,13 +45,19 @@ struct ProbingState {
 async fn do_stuff() -> Result<()> {
     let wantlist_logging_address =
         env::var("WANTLIST_LOGGING_TCP_ADDRESS").expect("WANTLIST_LOGGING_TCP_ADDRESS must be set");
-    info!("Using wantlist logging address {}",wantlist_logging_address);
+    info!(
+        "Using wantlist logging address {}",
+        wantlist_logging_address
+    );
 
     let monitoring_node_port = env::var("IPFS_MONITOR_PORT")
         .expect("IPFS_MONITOR_PORT must be set")
         .parse::<u16>()
         .context("invalid IPFS_MONITOR_PORT")?;
-    info!("Using monitoring node at localhost:{}",monitoring_node_port);
+    info!(
+        "Using monitoring node at localhost:{}",
+        monitoring_node_port
+    );
 
     // Get list of gateways.
     info!("getting list of gateways...");
