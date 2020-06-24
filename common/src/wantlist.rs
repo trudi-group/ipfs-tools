@@ -301,7 +301,7 @@ impl Wantlist {
                     missing_ledger = true;
                     Ledger{connection_count:1,wanted_entries:Default::default(),wanted_entries_before_disconnect:Default::default()}
                 });
-                if ledger.connection_count == 0{
+                if ledger.connection_count == 0 {
                     error!("got wantlist entries from peer {}, but we are still disconnected from that peer (was previously connected). This is either an error in how IPFS notifies about connection events, or in how we ingest them.",msg.peer);
                     ledger.connection_count = 1;
                 }
