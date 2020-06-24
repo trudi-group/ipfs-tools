@@ -1,7 +1,7 @@
-use ipfs_resolver_common::{Result, wantlist};
-use std::collections::HashMap;
 use failure::{err_msg, ResultExt};
-use serde::{Serialize,Deserialize};
+use ipfs_resolver_common::{wantlist, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ConnectionDurationTracker {
@@ -95,8 +95,11 @@ impl ConnectionDurationTracker {
             let addr = msg.address.clone().map(|a| a.to_string());
 
             if !connected && !disconnected {
-                debug!("skipping because CONNECTED and DISCONNECTED are both false, msg: {:?}",msg);
-                return Ok(())
+                debug!(
+                    "skipping because CONNECTED and DISCONNECTED are both false, msg: {:?}",
+                    msg
+                );
+                return Ok(());
             }
 
             self.push_inner(
@@ -107,7 +110,7 @@ impl ConnectionDurationTracker {
                 addr,
                 msg.timestamp,
             )
-                .context("unable to track connection duration")?;
+            .context("unable to track connection duration")?;
         }
 
         Ok(())
@@ -128,7 +131,7 @@ impl ConnectionDurationTracker {
                 "peer connection buffer for peer {} not found, initializing new one",
                 peer_id
             );
-            fresh=true;
+            fresh = true;
             PeerConnectionBuffer {
                 connection_start: Some(ts.clone()),
                 connected_address: addr.clone(),
@@ -148,7 +151,10 @@ impl ConnectionDurationTracker {
         if connected {
             if entry.connection_start.is_some() {
                 if !fresh {
-                    warn!("got CONNECTED, but already have a connection for peer {}, ignoring", peer_id);
+                    warn!(
+                        "got CONNECTED, but already have a connection for peer {}, ignoring",
+                        peer_id
+                    );
                 }
                 return Ok(());
             }
@@ -157,7 +163,10 @@ impl ConnectionDurationTracker {
             entry.connected_address = addr;
         } else if disconnected {
             if entry.connection_start.is_none() {
-                warn!("got DISCONNECTED, but don't have a connection for peer {}, ignoring",peer_id);
+                warn!(
+                    "got DISCONNECTED, but don't have a connection for peer {}, ignoring",
+                    peer_id
+                );
                 return Ok(());
             }
 
@@ -169,9 +178,7 @@ impl ConnectionDurationTracker {
                 address: addr,
             });
         } else {
-            return Err(err_msg(
-                "got neither CONNECTED nor DISCONNECTED",
-            ));
+            return Err(err_msg("got neither CONNECTED nor DISCONNECTED"));
         }
 
         Ok(())

@@ -3,6 +3,7 @@ extern crate log;
 
 mod conntrack;
 
+use crate::conntrack::ConnectionDurationTracker;
 use clap::{App, Arg, SubCommand};
 use failure::{err_msg, ResultExt};
 use flate2::read::GzDecoder;
@@ -11,8 +12,6 @@ use flate2::Compression;
 use ipfs_resolver_common::{logging, wantlist, Result};
 use std::io;
 use std::path::PathBuf;
-use crate::conntrack::ConnectionDurationTracker;
-
 
 fn main() -> Result<()> {
     let matches = App::new("IPFS wantlist JSON to CSV converter")
@@ -351,4 +350,3 @@ fn print_lookup_tables() {
     println!("Entry types:");
     println!("{}", wantlist::entry_types_csv())
 }
-
