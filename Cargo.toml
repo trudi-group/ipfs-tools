@@ -7,5 +7,6 @@ members=[
 "wantlist-client",
 "ipfs-json-to-csv",
 "gateway-finder",
-"wantlist-client-lib"
+"wantlist-client-lib",
+"ipfs-walk-tree"
 ]

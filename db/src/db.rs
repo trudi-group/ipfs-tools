@@ -177,6 +177,53 @@ pub fn update_unixfs_links_with_cidv1(conn: &PgConnection, ls: Vec<UnixFSLink>) 
 }
 */
 
+pub fn get_block(conn: &PgConnection, block_id: i32) -> Result<Block> {
+    use crate::schema::blocks::dsl::*;
+
+    let b = blocks.find(block_id).get_result(conn)?;
+
+    Ok(b)
+}
+
+pub fn find_block_by_cid(conn: &PgConnection, cid: &Vec<u8>) -> Result<Option<Block>> {
+    use crate::schema::blocks::dsl::*;
+
+    let b = blocks.filter(cidv1.eq(cid)).first(conn).optional()?;
+
+    Ok(b)
+}
+
+pub fn get_unixfs_links_for_block(conn: &PgConnection, block_id: i32) -> Result<Vec<UnixFSLink>> {
+    use crate::schema::unixfs_links::dsl::*;
+
+    let links = unixfs_links
+        .filter(parent_block_id.eq(block_id))
+        .get_results(conn)?;
+
+    Ok(links)
+}
+
+pub fn find_unixfs_links_by_cid(conn: &PgConnection, cid: &Vec<u8>) -> Result<Vec<UnixFSLink>> {
+    use crate::schema::unixfs_links::dsl::*;
+
+    let links: Vec<UnixFSLink> = unixfs_links
+        .filter(referenced_cidv1.eq(cid))
+        .get_results(conn)?;
+
+    Ok(links)
+}
+
+pub fn get_successful_resolves_for_block(
+    conn: &PgConnection,
+    p_block_id: i32,
+) -> Result<Vec<SuccessfulResolve>> {
+    use crate::schema::successful_resolves::dsl::*;
+
+    let resolves = successful_resolves.find(p_block_id).get_results(conn)?;
+
+    Ok(resolves)
+}
+
 pub fn count_blocks(conn: &PgConnection) -> Result<i64> {
     use crate::schema::blocks;
 
