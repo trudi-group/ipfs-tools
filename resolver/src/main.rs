@@ -509,9 +509,9 @@ fn process_single_cid(
                 unixfs::Data_DataType::File => &*UNIXFS_TYPE_FILE,
                 unixfs::Data_DataType::HAMTShard => {
                     // We skip these for now because we need to decode them properly to get actual link names.
-                    debug!("skipping HAMTShard block");
-                    return Ok(Res::SkippedHAMTShard);
-                    //&*UNIXFS_TYPE_HAMT_SHARD
+                    //debug!("skipping HAMTShard block");
+                    //return Ok(Res::SkippedHAMTShard);
+                    &*UNIXFS_TYPE_HAMT_SHARD
                 }
                 unixfs::Data_DataType::Metadata => {
                     // We skip these for now because I have no idea how to treat them.
