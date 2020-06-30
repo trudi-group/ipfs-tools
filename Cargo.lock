@@ -310,6 +310,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cid-decode"
+version = "0.1.0"
+dependencies = [
+ "cid",
+ "dotenv",
+ "failure",
+ "flexi_logger",
+ "ipfs-resolver-common",
+ "log",
+ "multibase",
+ "multihash",
+]
+
+[[package]]
 name = "clap"
 version = "2.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,9 +561,9 @@ dependencies = [
 
 [[package]]
 name = "cursive-async-view"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28952e9609d5bce8c07aa515aa2a1cf15710ec665933073fbc42d0ef4cc2df4d"
+checksum = "a18a832828e60964e354b139915700401c9c35c1d8f5ec7387a482c0eb234ea7"
 dependencies = [
  "crossbeam",
  "cursive",

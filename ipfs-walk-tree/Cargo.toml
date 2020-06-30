@@ -18,4 +18,4 @@ cursive = "0.14.0"
 cursive_table_view = "0.12.0"
 hex = "0.4.2"
 diesel = { version = "^1", features = ["postgres","chrono"] }
-cursive-async-view = "0.3.3"
+cursive-async-view = "0.3.4"

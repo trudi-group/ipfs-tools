@@ -56,6 +56,7 @@ fn main() -> Result<()> {
     siv.set_user_data(UserData {
         navigation: Vec::new(),
         conn: Arc::new(Mutex::new(conn)),
+        loading: Arc::new(Mutex::new(false)),
     });
 
     add_entry_point_layer(&mut siv, &occurrences)?;
@@ -68,6 +69,7 @@ fn main() -> Result<()> {
 struct UserData {
     navigation: Vec<NavigationElement>,
     conn: Arc<Mutex<PgConnection>>,
+    loading: Arc<Mutex<bool>>,
 }
 
 enum NavigationElement {
@@ -78,8 +80,11 @@ enum NavigationElement {
 fn go_up_one_level(siv: &mut Cursive) {
     let mut nav = siv.user_data::<UserData>().unwrap();
     assert!(!nav.navigation.is_empty());
+    if *nav.loading.lock().unwrap() {
+        return
+    }
     if nav.navigation.len() == 1 {
-        return;
+        return
     }
 
     nav.navigation.pop();
@@ -89,14 +94,21 @@ fn go_up_one_level(siv: &mut Cursive) {
 fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) -> Result<()> {
     let data = siv.user_data::<UserData>().unwrap();
     let conn = data.conn.clone();
+    let loading = data.loading.clone();
+    {
+        let mut l = loading.lock().unwrap();
+        *l = true;
+    }
     let mut nav = &mut data.navigation;
     let block_id = children[0].parent_block_id;
     let table_name = format!("links_{}", block_id);
+    let num_children = children.len();
 
     nav.push(NavigationElement::UnixFSLinksTable {
         block_id,
         table_name: table_name.clone(),
     });
+
 
     let (tx, rx) = mpsc::channel();
     let thread_children = children.clone();
@@ -132,19 +144,24 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
             })
             .unwrap();
         }
+
+        {
+            let mut l = loading.lock().unwrap();
+            *l = false;
+        }
     });
 
     let mut links = Vec::new();
 
-    let async_view = AsyncView::new(siv, move || {
+    let async_view = AsyncProgressView::new(siv, move || {
         match rx.try_recv() {
             Ok(msg) => {
                 links.push(msg);
 
-                AsyncState::Pending
+                AsyncProgressState::Pending(links.len() as f32 / num_children as f32)
             }
 
-            Err(TryRecvError::Empty) => AsyncState::Pending,
+            Err(TryRecvError::Empty) => AsyncProgressState::Pending(links.len() as f32 / num_children as f32),
 
             // Channel closed, finished.
             Err(TryRecvError::Disconnected) => {
@@ -253,14 +270,14 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
                     }
                 });
 
-                AsyncState::Available(
+                AsyncProgressState::Available(
                     Dialog::around(table.with_name(table_name.clone()).min_size((200, 40)))
                         .title(format!("UnixFS links of block {}", block_id)),
                 )
             }
         }
     })
-    .with_width(40);
+    .with_width(80).with_height(10);
 
     siv.add_layer(Dialog::around(async_view));
 
@@ -270,10 +287,16 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
 fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>) -> Result<()> {
     let data = siv.user_data::<UserData>().unwrap();
     let conn = data.conn.clone();
+    let loading = data.loading.clone();
+    {
+        let mut l = loading.lock().unwrap();
+        *l = true;
+    }
     let mut nav = &mut data.navigation;
     let cid_string = hex::encode(&occurrences[0].referenced_cidv1);
     let cid_bytes = occurrences[0].referenced_cidv1.clone();
     let table_name = format!("refs_{}", cid_string);
+    let num_occurrences = occurrences.len();
 
     nav.push(NavigationElement::EntryPointTable {
         cid: cid_bytes,
@@ -309,19 +332,24 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
             })
             .unwrap();
         }
+
+        {
+            let mut l = loading.lock().unwrap();
+            *l = false;
+        }
     });
 
     let mut entry_points = Vec::new();
 
-    let async_view = AsyncView::new(siv, move || {
+    let async_view = AsyncProgressView::new(siv, move || {
         match rx.try_recv() {
             Ok(msg) => {
                 entry_points.push(msg);
 
-                AsyncState::Pending
+                AsyncProgressState::Pending(entry_points.len() as f32 / num_occurrences as f32)
             }
 
-            Err(TryRecvError::Empty) => AsyncState::Pending,
+            Err(TryRecvError::Empty) => AsyncProgressState::Pending(entry_points.len() as f32 / num_occurrences as f32),
 
             // Channel closed, finished.
             Err(TryRecvError::Disconnected) => {
@@ -421,7 +449,7 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
                     }
                 });
 
-                AsyncState::Available(
+                AsyncProgressState::Available(
                     Dialog::around(table.with_name(table_name.clone()).min_size((200, 40)))
                         .title(format!("References to {}", cid_string)),
                 )
@@ -429,7 +457,7 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
         }
     });
 
-    siv.add_layer(Dialog::around(async_view.with_width(40)));
+    siv.add_layer(Dialog::around(async_view.with_width(80).with_height(10)));
 
     Ok(())
 }
