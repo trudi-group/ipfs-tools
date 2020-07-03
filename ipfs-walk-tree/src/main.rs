@@ -81,10 +81,10 @@ fn go_up_one_level(siv: &mut Cursive) {
     let mut nav = siv.user_data::<UserData>().unwrap();
     assert!(!nav.navigation.is_empty());
     if *nav.loading.lock().unwrap() {
-        return
+        return;
     }
     if nav.navigation.len() == 1 {
-        return
+        return;
     }
 
     nav.navigation.pop();
@@ -108,7 +108,6 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
         block_id,
         table_name: table_name.clone(),
     });
-
 
     let (tx, rx) = mpsc::channel();
     let thread_children = children.clone();
@@ -161,7 +160,9 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
                 AsyncProgressState::Pending(links.len() as f32 / num_children as f32)
             }
 
-            Err(TryRecvError::Empty) => AsyncProgressState::Pending(links.len() as f32 / num_children as f32),
+            Err(TryRecvError::Empty) => {
+                AsyncProgressState::Pending(links.len() as f32 / num_children as f32)
+            }
 
             // Channel closed, finished.
             Err(TryRecvError::Disconnected) => {
@@ -277,7 +278,8 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
             }
         }
     })
-    .with_width(80).with_height(10);
+    .with_width(80)
+    .with_height(10);
 
     siv.add_layer(Dialog::around(async_view));
 
@@ -349,7 +351,9 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
                 AsyncProgressState::Pending(entry_points.len() as f32 / num_occurrences as f32)
             }
 
-            Err(TryRecvError::Empty) => AsyncProgressState::Pending(entry_points.len() as f32 / num_occurrences as f32),
+            Err(TryRecvError::Empty) => {
+                AsyncProgressState::Pending(entry_points.len() as f32 / num_occurrences as f32)
+            }
 
             // Channel closed, finished.
             Err(TryRecvError::Disconnected) => {
