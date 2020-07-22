@@ -10,4 +10,5 @@ members=[
 "wantlist-client-lib",
 "ipfs-walk-tree",
 "cid-decode",
+"csv-to-graph",
 ]
