@@ -8,8 +8,8 @@ use ipfs_resolver_db::model;
 
 use ipfs_resolver_common::{ipfs, logging, Result};
 
-mod unixfs;
 mod heuristics;
+mod unixfs;
 
 use crate::ipfs::ResolveError;
 use chrono::Utc;
