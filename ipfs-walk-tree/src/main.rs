@@ -9,13 +9,12 @@ use ipfs_resolver_db::{canonicalize_cid_from_str_to_cidv1, db};
 use cursive::traits::*;
 use cursive::views::{Dialog, TextView};
 use cursive::Cursive;
-use cursive_async_view::{AsyncProgressState, AsyncProgressView, AsyncState, AsyncView};
+use cursive_async_view::{AsyncProgressState, AsyncProgressView};
 use cursive_table_view::{TableView, TableViewItem};
 use diesel::PgConnection;
 use failure::_core::cmp::Ordering;
 use failure::{err_msg, ResultExt};
 use ipfs_resolver_common::{logging, Result};
-use std::rc::Rc;
 use std::sync::mpsc::TryRecvError;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -72,13 +71,14 @@ struct UserData {
     loading: Arc<Mutex<bool>>,
 }
 
+#[derive(Clone, Debug)]
 enum NavigationElement {
     EntryPointTable { cid: Vec<u8>, table_name: String },
     UnixFSLinksTable { block_id: i32, table_name: String },
 }
 
 fn go_up_one_level(siv: &mut Cursive) {
-    let mut nav = siv.user_data::<UserData>().unwrap();
+    let nav = siv.user_data::<UserData>().unwrap();
     assert!(!nav.navigation.is_empty());
     if *nav.loading.lock().unwrap() {
         return;
@@ -87,7 +87,8 @@ fn go_up_one_level(siv: &mut Cursive) {
         return;
     }
 
-    nav.navigation.pop();
+    let layer = nav.navigation.pop();
+    debug!("popped navigation layer {:?}", layer);
     siv.pop_layer();
 }
 
@@ -99,7 +100,7 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
         let mut l = loading.lock().unwrap();
         *l = true;
     }
-    let mut nav = &mut data.navigation;
+    let nav = &mut data.navigation;
     let block_id = children[0].parent_block_id;
     let table_name = format!("links_{}", block_id);
     let num_children = children.len();
@@ -201,7 +202,7 @@ fn add_unixfs_links_table(siv: &mut Cursive, children: &Vec<model::UnixFSLink>) 
                 table.set_items(links.clone());
 
                 let inner_table_name = table_name.to_string();
-                table.set_on_submit(move |siv: &mut Cursive, row: usize, index: usize| {
+                table.set_on_submit(move |siv: &mut Cursive, _row: usize, index: usize| {
                     let item = siv
                         .call_on_name(
                             &inner_table_name,
@@ -294,7 +295,7 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
         let mut l = loading.lock().unwrap();
         *l = true;
     }
-    let mut nav = &mut data.navigation;
+    let nav = &mut data.navigation;
     let cid_string = hex::encode(&occurrences[0].referenced_cidv1);
     let cid_bytes = occurrences[0].referenced_cidv1.clone();
     let table_name = format!("refs_{}", cid_string);
@@ -392,7 +393,7 @@ fn add_entry_point_layer(siv: &mut Cursive, occurrences: &Vec<model::UnixFSLink>
                 table.set_items(entry_points.clone());
 
                 let inner_table_name = table_name.clone();
-                table.set_on_submit(move |siv: &mut Cursive, row: usize, index: usize| {
+                table.set_on_submit(move |siv: &mut Cursive, _row: usize, index: usize| {
                     let item = siv
                         .call_on_name(
                             &inner_table_name,
@@ -665,7 +666,7 @@ impl TableViewItem<DirectoryListingColumn> for UnixFSLink {
                         Ordering::Greater
                     }
                 } else {
-                    if let Some(other_block) = &other.block {
+                    if other.block.is_some() {
                         Ordering::Less
                     } else {
                         Ordering::Equal
@@ -694,7 +695,7 @@ impl TableViewItem<DirectoryListingColumn> for UnixFSLink {
                         Ordering::Greater
                     }
                 } else {
-                    if let Some(other_block) = &other.block {
+                    if other.block.is_some() {
                         Ordering::Less
                     } else {
                         Ordering::Equal
@@ -710,7 +711,7 @@ impl TableViewItem<DirectoryListingColumn> for UnixFSLink {
                         Ordering::Greater
                     }
                 } else {
-                    if let Some(other_block) = &other.block {
+                    if other.block.is_some() {
                         Ordering::Less
                     } else {
                         Ordering::Equal
