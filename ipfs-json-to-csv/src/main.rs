@@ -56,7 +56,7 @@ fn main() -> Result<()> {
         "output file for connection durations is {}",
         conf.connection_duration_output_file
     );
-    info!("simulation config is {:?}", conf.simulation_config);
+    debug!("simulation config is {:?}", conf.simulation_config);
 
     do_transform(conf).context("unable to do transformation")?;
 
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
 }
 
 struct SingleFileTransformResult {
-    timestamps: Option<(chrono::DateTime<chrono::Utc>,chrono::DateTime<chrono::Utc>)>,
+    timestamps: Option<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>,
     num_missing_ledgers: i32,
 }
 
@@ -122,8 +122,10 @@ fn do_transform_single_file(
 
     Ok(SingleFileTransformResult {
         timestamps: if let Some(first) = first_message_ts {
-            Some((first,last_message_ts.unwrap()))
-        } else {None},
+            Some((first, last_message_ts.unwrap()))
+        } else {
+            None
+        },
         num_missing_ledgers: missing_ledgers,
     })
 }
@@ -185,10 +187,15 @@ fn do_transform(cfg: config::Config) -> Result<()> {
         let num_messages = current_message_id - id_before;
         let time_diff = before.elapsed();
 
-        info!("processed {} messages in {} s => {:.2} msg/s",num_messages,time_diff.as_secs(),(num_messages as f64) / time_diff.as_secs_f64());
+        info!(
+            "processed {} messages in {:.1}s => {:.1}msg/s",
+            num_messages,
+            time_diff.as_secs_f32(),
+            (num_messages as f64) / time_diff.as_secs_f64()
+        );
 
         match transform_result.timestamps {
-            Some((first,last)) => {
+            Some((first, last)) => {
                 info!("first ts: {}, last ts: {}", first, last);
                 final_ts.replace(last);
             }

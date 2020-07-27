@@ -83,6 +83,7 @@ pub struct CSVWantlistEntry {
     pub cid: String,
     pub duplicate_status: u32,
     pub sliding_window_smallest_match: u32,
+    pub secs_until_earlier_message: u32,
 }
 
 impl CSVWantlistEntry {
@@ -115,6 +116,7 @@ impl CSVWantlistEntry {
                 cid: e.cid,
                 duplicate_status,
                 sliding_window_smallest_match,
+                secs_until_earlier_message: 0,
             })
             .collect()
     }
@@ -179,6 +181,7 @@ impl CSVWantlistEntry {
                 cid: entry.cid.path,
                 duplicate_status: CSV_DUPLICATE_STATUS_NO_DUP,
                 sliding_window_smallest_match: 0,
+                secs_until_earlier_message: 0,
             })
             .collect();
 
@@ -328,8 +331,14 @@ impl EngineSimulation {
         let (mut full_wl_dups, mut full_wl_synth_cancels) = (None, None);
         let (new_wants, new_cancels) = Self::split_wants_cancels(&entries);
 
-        let sliding_window_dups = Self::get_duplicate_entries_from_sliding_windows(
-            &self.cfg.sliding_window_lengths,
+        //let sliding_window_dups = Self::get_duplicate_entries_from_sliding_windows(
+        //    &self.cfg.sliding_window_lengths,
+        //    ledger,
+        //    msg.timestamp.clone(),
+        //    &new_wants,
+        //);
+
+        let offsets_since_earlier_messages = Self::get_secs_until_earlier_message_with_same_cid(
             ledger,
             msg.timestamp.clone(),
             &new_wants,
@@ -407,6 +416,10 @@ impl EngineSimulation {
 
         // Mark duplicates
         for entry in entries.iter_mut() {
+            if entry.entry_type == CSV_ENTRY_TYPE_CANCEL {
+                // Cancels are never dups (I hope).
+                continue;
+            }
             if let Some(full_wl_dups) = full_wl_dups.as_ref() {
                 if full_wl_dups.iter().find(|e| e.cid == entry.cid).is_some() {
                     // This is a dup
@@ -419,16 +432,42 @@ impl EngineSimulation {
                     entry.duplicate_status += CSV_DUPLICATE_STATUS_DUP_RECONNECT
                 }
             }
-            if let Some(sliding_window_dups) = sliding_window_dups.as_ref() {
-                if let Some((_, win_size)) =
-                    sliding_window_dups.iter().find(|e| e.0.cid == entry.cid)
-                {
-                    // This is a dup too!
-                    entry.duplicate_status += CSV_DUPLICATE_STATUS_DUP_SLIDING_WINDOW;
-                    entry.sliding_window_smallest_match = *win_size;
-                }
-            }
         }
+
+        // Now figure out sliding window stuff.
+        // This here costs performance but better be safe than sorry.
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
+                .count(),
+            offsets_since_earlier_messages.len()
+        );
+
+        // We now know they are the same length, so we can zip 'em up and be gucci.
+        entries
+            .iter_mut()
+            .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
+            .zip(offsets_since_earlier_messages.into_iter())
+            .for_each(|(e, (ee, offset))| {
+                assert_eq!(e.cid, ee.cid.path);
+                if let Some(offset) = offset {
+                    e.secs_until_earlier_message = offset;
+
+                    // Figure out if it matches any sliding window.
+                    // cfg.sliding_window_lengths is sorted, so we take the first match that is
+                    // big enough.
+                    if let Some(smallest_match) = self
+                        .cfg
+                        .sliding_window_lengths
+                        .iter()
+                        .find(|window_len| **window_len > offset)
+                    {
+                        e.duplicate_status += CSV_DUPLICATE_STATUS_DUP_SLIDING_WINDOW;
+                        e.sliding_window_smallest_match = *smallest_match
+                    }
+                }
+            });
 
         // Add synthetic cancels
         if let Some(cancels) = synth_cancels {
@@ -442,54 +481,29 @@ impl EngineSimulation {
         })
     }
 
-    fn get_duplicate_entries_from_sliding_windows(
-        sliding_window_lengths: &Vec<u32>,
+    fn get_secs_until_earlier_message_with_same_cid(
         ledger: &Ledger,
         msg_ts: chrono::DateTime<chrono::Utc>,
         new_entries: &Vec<&JSONWantlistEntry>,
-    ) -> Option<Vec<(WantlistEntry, u32)>> {
-        if sliding_window_lengths.is_empty() {
-            return None;
-        }
-
-        let windows: Vec<_> = sliding_window_lengths
+    ) -> Vec<(JSONWantlistEntry, Option<u32>)> {
+        new_entries
             .iter()
-            .map(|e| (*e, msg_ts - chrono::Duration::seconds(*e as i64)))
-            .collect();
-
-        // cfg.sliding_window_lengths is ordered, so the biggest window is at the end.
-        let (_, biggest_window_start) = windows.last().unwrap().clone();
-
-        // Find elements in the ledger that fall in the largest window
-        let dups: Vec<_> = ledger
-            .wanted_entries
-            .iter()
-            .filter(|n| {
-                n.ts > biggest_window_start
-                    && new_entries.iter().find(|e| e.cid.path == n.cid).is_some()
-            })
             .cloned()
-            .collect();
-
-        if dups.is_empty() {
-            return None;
-        }
-
-        // Now figure out which window they actually matched
-        let dups = dups
-            .into_iter()
             .map(|e| {
-                // We know it matches one of these because it matched the biggest one.
-                for (win_size, win_start) in windows.iter() {
-                    if &e.ts > win_start {
-                        return (e, *win_size);
+                let existing_entry = ledger.wanted_entries.iter().find(|ee| ee.cid == e.cid.path);
+                if let Some(existing) = existing_entry {
+                    let diff = msg_ts - existing.ts;
+                    if diff.num_seconds() == 0 {
+                        // Pathological case of less than one second since last message.
+                        (e.clone(), Some(1))
+                    } else {
+                        (e.clone(), Some(diff.num_seconds() as u32))
                     }
+                } else {
+                    (e.clone(), None)
                 }
-                unreachable!("at least one window should match")
             })
-            .collect();
-
-        Some(dups)
+            .collect()
     }
 
     fn get_duplicate_entries_and_synth_cancels_from_full_wantlist(
