@@ -1,0 +1,39 @@
+# This is a config file for the ipfs-json-to-csv tool.
+#
+input_globs:
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-06-26*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-06-27*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-06-28*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-06-29*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-06-30*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-01*.gz"
+  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-02*.gz"
+#
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-01*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-02*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-03*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-04*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-05*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-06*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-07*.gz"
+#
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-06*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-07*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-08*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-09*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-10*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-11*.gz"
+#  - "/mnt/e/masterprojekt/ipfs/archive/wantlists/wantlist.json.2020-07-12*.gz"
+wantlist_output_file_pattern: "tmp/wl-$id$.csv.gz"
+connection_events_output_file: "tmp/conn_events.csv.gz"
+connection_duration_output_file: "tmp/conn_durs.csv.gz"
+simulation_config:
+  allow_empty_full_wantlist: false
+  allow_empty_connection_event: false
+  insert_full_wantlist_synth_cancels: true
+  insert_disconnect_synth_cancels: true
+  insert_full_wantlist_duplicate_markers: true
+  insert_reconnect_duplicate_markers: true
+  reconnect_duplicate_duration_secs: 5
+  insert_sliding_window_duplicate_markers: true
+  sliding_window_lengths: [12,32,602,3602]
