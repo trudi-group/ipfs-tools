@@ -247,16 +247,34 @@ impl CSVConnectionEvent {
     }
 }
 
-/*
+#[derive(Clone, Debug, Ord, PartialOrd, PartialEq, Eq)]
 enum WantType {
     Block,
     Have,
-}*/
+}
+
+impl WantType {
+    fn from_json_entry(e: &JSONWantlistEntry) -> WantType {
+        match e.want_type {
+            JSON_WANT_TYPE_BLOCK => WantType::Block,
+            JSON_WANT_TYPE_HAVE => WantType::Have,
+            _ => panic!("attempted to create WantType from weird JSON entry"),
+        }
+    }
+
+    fn from_csv_entry(e: &CSVWantlistEntry) -> WantType {
+        match e.entry_type {
+            CSV_ENTRY_TYPE_WANT_BLOCK | CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE => WantType::Block,
+            CSV_ENTRY_TYPE_WANT_HAVE | CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE => WantType::Have,
+            _ => panic!("attempted to create WantType from weird CSV entry"),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct WantlistEntry {
     cid: String,
-    //want_type: WantType,
+    want_type: WantType,
     ts: chrono::DateTime<chrono::Utc>,
 }
 
@@ -331,18 +349,12 @@ impl EngineSimulation {
         let (mut full_wl_dups, mut full_wl_synth_cancels) = (None, None);
         let (new_wants, new_cancels) = Self::split_wants_cancels(&entries);
 
-        //let sliding_window_dups = Self::get_duplicate_entries_from_sliding_windows(
-        //    &self.cfg.sliding_window_lengths,
-        //    ledger,
-        //    msg.timestamp.clone(),
-        //    &new_wants,
-        //);
-
-        let offsets_since_earlier_messages = Self::get_secs_until_earlier_message_with_same_cid(
-            ledger,
-            msg.timestamp.clone(),
-            &new_wants,
-        );
+        let offsets_since_earlier_messages =
+            Self::get_secs_until_earlier_message_with_same_cid_and_want_type(
+                ledger,
+                msg.timestamp.clone(),
+                &new_wants,
+            );
 
         match &msg.full_want_list {
             Some(full) => match full {
@@ -352,12 +364,17 @@ impl EngineSimulation {
                         .map(|c| WantlistEntry {
                             cid: c.cid.path.clone(),
                             ts: msg.timestamp.clone(),
+                            want_type: WantType::from_json_entry(c),
                         })
                         .collect();
                     let old_wants = mem::replace(&mut ledger.wanted_entries, new_wants);
                     ledger
                         .wanted_entries
                         .sort_unstable_by(|e1, e2| e1.cid.cmp(&e2.cid));
+                    ensure!(
+                        !Self::check_ledger_for_duplicates(&ledger.wanted_entries),
+                        "ledger contains duplicates"
+                    );
 
                     let (full_wl_dups_t, full_wl_synth_cancels_t) =
                         Self::get_duplicate_entries_and_synth_cancels_from_full_wantlist(
@@ -421,13 +438,21 @@ impl EngineSimulation {
                 continue;
             }
             if let Some(full_wl_dups) = full_wl_dups.as_ref() {
-                if full_wl_dups.iter().find(|e| e.cid == entry.cid).is_some() {
+                if full_wl_dups
+                    .iter()
+                    .find(|e| e.cid == entry.cid && e.want_type == WantType::from_csv_entry(entry))
+                    .is_some()
+                {
                     // This is a dup
                     entry.duplicate_status += CSV_DUPLICATE_STATUS_DUP_FULL_WANTLIST
                 }
             }
             if let Some(reconnect_dups) = reconnect_dups.as_ref() {
-                if reconnect_dups.iter().find(|e| e.cid == entry.cid).is_some() {
+                if reconnect_dups
+                    .iter()
+                    .find(|e| e.cid == entry.cid && e.want_type == WantType::from_csv_entry(entry))
+                    .is_some()
+                {
                     // This is a dup too
                     entry.duplicate_status += CSV_DUPLICATE_STATUS_DUP_RECONNECT
                 }
@@ -444,7 +469,7 @@ impl EngineSimulation {
             offsets_since_earlier_messages.len()
         );
 
-        // We now know they are the same length, so we can zip 'em up and be gucci.
+        // We now know they are the same length and same ordering, so we can zip 'em up and be gucci.
         entries
             .iter_mut()
             .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
@@ -481,7 +506,7 @@ impl EngineSimulation {
         })
     }
 
-    fn get_secs_until_earlier_message_with_same_cid(
+    fn get_secs_until_earlier_message_with_same_cid_and_want_type(
         ledger: &Ledger,
         msg_ts: chrono::DateTime<chrono::Utc>,
         new_entries: &Vec<&JSONWantlistEntry>,
@@ -490,7 +515,9 @@ impl EngineSimulation {
             .iter()
             .cloned()
             .map(|e| {
-                let existing_entry = ledger.wanted_entries.iter().find(|ee| ee.cid == e.cid.path);
+                let existing_entry = ledger.wanted_entries.iter().find(|ee| {
+                    ee.cid == e.cid.path && ee.want_type == WantType::from_json_entry(e)
+                });
                 if let Some(existing) = existing_entry {
                     let diff = msg_ts - existing.ts;
                     if diff.num_seconds() == 0 {
@@ -513,9 +540,13 @@ impl EngineSimulation {
         if old_entries.is_empty() {
             return (None, None);
         }
-        let (dups, cancels): (Vec<WantlistEntry>, Vec<WantlistEntry>) = old_entries
-            .into_iter()
-            .partition(|e| new_entries.iter().find(|n| n.cid == e.cid).is_some());
+        let (dups, cancels): (Vec<WantlistEntry>, Vec<WantlistEntry>) =
+            old_entries.into_iter().partition(|e| {
+                new_entries
+                    .iter()
+                    .find(|n| n.cid == e.cid && n.want_type == e.want_type)
+                    .is_some()
+            });
 
         if dups.is_empty() {
             // Cancels must be something
@@ -545,7 +576,7 @@ impl EngineSimulation {
                         ledger
                             .wanted_entries
                             .iter()
-                            .find(|n| n.cid == e.cid)
+                            .find(|n| n.cid == e.cid && n.want_type == e.want_type)
                             .is_some()
                     });
 
@@ -720,6 +751,21 @@ impl EngineSimulation {
         (wants, cancels)
     }
 
+    fn check_ledger_for_duplicates(l: &[WantlistEntry]) -> bool {
+        let mut previous = None;
+        for e in l {
+            if let Some(previous) = previous {
+                if &e.cid == previous {
+                    return true;
+                }
+            }
+
+            previous = Some(&e.cid)
+        }
+
+        false
+    }
+
     fn apply_new_entries(
         current_entries: &mut Vec<WantlistEntry>,
         wants: Vec<&JSONWantlistEntry>,
@@ -742,18 +788,25 @@ impl EngineSimulation {
         for want in wants {
             match current_entries.binary_search_by(|e| e.cid.cmp(&want.cid.path)) {
                 Ok(i) => {
-                    // we already have the entry, we need to update its timestamp.
+                    // we already have the entry, we need to update its timestamp and want type.
                     current_entries[i].ts = ts.clone();
+                    current_entries[i].want_type = WantType::from_json_entry(want);
                 }
                 Err(i) => current_entries.insert(
                     i,
                     WantlistEntry {
                         cid: want.cid.path.clone(),
                         ts: ts.clone(),
+                        want_type: WantType::from_json_entry(want),
                     },
                 ),
             }
         }
+
+        ensure!(
+            !Self::check_ledger_for_duplicates(current_entries),
+            "ledger contains duplicates"
+        );
 
         Ok(())
     }
