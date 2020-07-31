@@ -84,6 +84,7 @@ pub struct CSVWantlistEntry {
     pub duplicate_status: u32,
     pub sliding_window_smallest_match: u32,
     pub secs_until_earlier_message: u32,
+    pub upgrades_earlier_request: bool,
 }
 
 impl CSVWantlistEntry {
@@ -117,6 +118,7 @@ impl CSVWantlistEntry {
                 duplicate_status,
                 sliding_window_smallest_match,
                 secs_until_earlier_message: 0,
+                upgrades_earlier_request: false,
             })
             .collect()
     }
@@ -182,6 +184,7 @@ impl CSVWantlistEntry {
                 duplicate_status: CSV_DUPLICATE_STATUS_NO_DUP,
                 sliding_window_smallest_match: 0,
                 secs_until_earlier_message: 0,
+                upgrades_earlier_request: false,
             })
             .collect();
 
@@ -354,7 +357,10 @@ impl EngineSimulation {
                 ledger,
                 msg.timestamp.clone(),
                 &new_wants,
+                &new_cancels,
             );
+        let upgrade_statuses =
+            Self::get_upgraded_status_for_same_cid(ledger, &new_wants, &new_cancels);
 
         match &msg.full_want_list {
             Some(full) => match full {
@@ -494,6 +500,23 @@ impl EngineSimulation {
                 }
             });
 
+        // And figure out whether requests are upgraded.
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
+                .count(),
+            upgrade_statuses.len()
+        );
+        entries
+            .iter_mut()
+            .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
+            .zip(upgrade_statuses.into_iter())
+            .for_each(|(e, (ee, upgraded))| {
+                assert_eq!(e.cid, ee.cid.path);
+                e.upgrades_earlier_request = upgraded;
+            });
+
         // Add synthetic cancels
         if let Some(cancels) = synth_cancels {
             entries.extend(cancels.into_iter())
@@ -506,15 +529,57 @@ impl EngineSimulation {
         })
     }
 
+    fn get_upgraded_status_for_same_cid(
+        ledger: &Ledger,
+        new_entries: &Vec<&JSONWantlistEntry>,
+        new_cancels: &Vec<&JSONWantlistEntry>,
+    ) -> Vec<(JSONWantlistEntry, bool)> {
+        new_entries
+            .iter()
+            .cloned()
+            .map(|e| {
+                if new_cancels
+                    .iter()
+                    .find(|ee| ee.cid.path == e.cid.path)
+                    .is_some()
+                {
+                    // We found a CANCEL for the CID.
+                    return (e.clone(), false);
+                }
+                let existing_entry = ledger.wanted_entries.iter().find(|ee| ee.cid == e.cid.path);
+                if let Some(existing) = existing_entry {
+                    if existing.want_type == WantType::Have
+                        && WantType::from_json_entry(e) == WantType::Block
+                    {
+                        (e.clone(), true)
+                    } else {
+                        (e.clone(), false)
+                    }
+                } else {
+                    (e.clone(), false)
+                }
+            })
+            .collect()
+    }
+
     fn get_secs_until_earlier_message_with_same_cid_and_want_type(
         ledger: &Ledger,
         msg_ts: chrono::DateTime<chrono::Utc>,
         new_entries: &Vec<&JSONWantlistEntry>,
+        new_cancels: &Vec<&JSONWantlistEntry>,
     ) -> Vec<(JSONWantlistEntry, Option<u32>)> {
         new_entries
             .iter()
             .cloned()
             .map(|e| {
+                if new_cancels
+                    .iter()
+                    .find(|ee| ee.cid.path == e.cid.path)
+                    .is_some()
+                {
+                    // We found a CANCEL for the CID.
+                    return (e.clone(), None);
+                }
                 let existing_entry = ledger.wanted_entries.iter().find(|ee| {
                     ee.cid == e.cid.path && ee.want_type == WantType::from_json_entry(e)
                 });
