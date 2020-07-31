@@ -83,7 +83,7 @@ pub struct CSVWantlistEntry {
     pub cid: String,
     pub duplicate_status: u32,
     pub sliding_window_smallest_match: u32,
-    pub secs_until_earlier_message: u32,
+    pub secs_since_earlier_message: u32,
     pub upgrades_earlier_request: bool,
 }
 
@@ -117,7 +117,7 @@ impl CSVWantlistEntry {
                 cid: e.cid,
                 duplicate_status,
                 sliding_window_smallest_match,
-                secs_until_earlier_message: 0,
+                secs_since_earlier_message: 0,
                 upgrades_earlier_request: false,
             })
             .collect()
@@ -183,7 +183,7 @@ impl CSVWantlistEntry {
                 cid: entry.cid.path,
                 duplicate_status: CSV_DUPLICATE_STATUS_NO_DUP,
                 sliding_window_smallest_match: 0,
-                secs_until_earlier_message: 0,
+                secs_since_earlier_message: 0,
                 upgrades_earlier_request: false,
             })
             .collect();
@@ -483,7 +483,7 @@ impl EngineSimulation {
             .for_each(|(e, (ee, offset))| {
                 assert_eq!(e.cid, ee.cid.path);
                 if let Some(offset) = offset {
-                    e.secs_until_earlier_message = offset;
+                    e.secs_since_earlier_message = offset;
 
                     // Figure out if it matches any sliding window.
                     // cfg.sliding_window_lengths is sorted, so we take the first match that is
