@@ -361,6 +361,11 @@ impl EngineSimulation {
             );
         let upgrade_statuses =
             Self::get_upgraded_status_for_same_cid(ledger, &new_wants, &new_cancels);
+        let offsets_since_request_for_cancels = Self::calculate_secs_since_request_for_cancels(
+            ledger,
+            &new_cancels,
+            msg.timestamp.clone(),
+        );
 
         match &msg.full_want_list {
             Some(full) => match full {
@@ -517,6 +522,25 @@ impl EngineSimulation {
                 e.upgrades_earlier_request = upgraded;
             });
 
+        // Add time-since-request for CANCELs...
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|e| e.entry_type == CSV_ENTRY_TYPE_CANCEL)
+                .count(),
+            offsets_since_request_for_cancels.len()
+        );
+        entries
+            .iter_mut()
+            .filter(|e| e.entry_type == CSV_ENTRY_TYPE_CANCEL)
+            .zip(offsets_since_request_for_cancels.into_iter())
+            .for_each(|(e, (ee, secs))| {
+                assert_eq!(e.cid, ee.cid.path);
+                if let Some(secs) = secs {
+                    e.secs_since_earlier_message = secs;
+                }
+            });
+
         // Add synthetic cancels
         if let Some(cancels) = synth_cancels {
             entries.extend(cancels.into_iter())
@@ -527,6 +551,34 @@ impl EngineSimulation {
             wantlist_entries: Some(entries),
             connection_event: None,
         })
+    }
+
+    fn calculate_secs_since_request_for_cancels(
+        ledger: &Ledger,
+        new_cancels: &Vec<&JSONWantlistEntry>,
+        msg_ts: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<(JSONWantlistEntry, Option<u32>)> {
+        new_cancels
+            .iter()
+            .cloned()
+            .map(|cancel| {
+                if let Ok(i) = ledger
+                    .wanted_entries
+                    .binary_search_by(|e| e.cid.cmp(&cancel.cid.path))
+                {
+                    let time_diff = msg_ts - ledger.wanted_entries.get(i).unwrap().ts;
+                    if time_diff.num_seconds() == 0 {
+                        // Pathological case of less than one second since last message.
+                        (cancel.clone(), Some(1))
+                    } else {
+                        (cancel.clone(), Some(time_diff.num_seconds() as u32))
+                    }
+                } else {
+                    // Not found.
+                    (cancel.clone(), None)
+                }
+            })
+            .collect()
     }
 
     fn get_upgraded_status_for_same_cid(
@@ -843,7 +895,7 @@ impl EngineSimulation {
                 current_entries.remove(i);
             } else {
                 // Not found.
-                debug!(
+                warn!(
                     "got CANCEL for CID {} from peer {}, but don't have an entry for that",
                     cancel.cid.path, peer
                 )
