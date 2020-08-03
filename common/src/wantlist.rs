@@ -295,10 +295,7 @@ pub struct EngineSimulationConfig {
     pub allow_empty_connection_event: bool,
     pub insert_full_wantlist_synth_cancels: bool,
     pub insert_disconnect_synth_cancels: bool,
-    pub insert_full_wantlist_duplicate_markers: bool,
-    pub insert_reconnect_duplicate_markers: bool,
     pub reconnect_duplicate_duration_secs: u32,
-    pub insert_sliding_window_duplicate_markers: bool,
     pub sliding_window_lengths: Vec<u32>,
 }
 
@@ -393,7 +390,9 @@ impl EngineSimulation {
                             &ledger.wanted_entries,
                         );
                     full_wl_dups = full_wl_dups_t;
-                    full_wl_synth_cancels = full_wl_synth_cancels_t;
+                    if self.cfg.insert_full_wantlist_synth_cancels {
+                        full_wl_synth_cancels = full_wl_synth_cancels_t;
+                    }
                 }
                 false => {
                     Self::apply_new_entries(

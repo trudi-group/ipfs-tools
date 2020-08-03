@@ -32,8 +32,5 @@ simulation_config:
   allow_empty_connection_event: false
   insert_full_wantlist_synth_cancels: true
   insert_disconnect_synth_cancels: true
-  insert_full_wantlist_duplicate_markers: true
-  insert_reconnect_duplicate_markers: true
   reconnect_duplicate_duration_secs: 5
-  insert_sliding_window_duplicate_markers: true
-  sliding_window_lengths: [1,6,11,31,601,3601]
+  sliding_window_lengths: [1,6,11,31,601,3601,604801]
