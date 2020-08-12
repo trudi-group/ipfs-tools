@@ -305,6 +305,13 @@ pub struct EngineSimulation {
     cfg: EngineSimulationConfig,
 }
 
+impl EngineSimulation {
+    /// Returns the number of ledgers simulated in total up to now.
+    pub fn num_ledgers(&self) -> usize {
+        self.peers.len()
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct IngestResult {
     pub missing_ledger: bool,

@@ -10,6 +10,7 @@ pub(crate) struct Config {
     pub(crate) wantlist_output_file_pattern: String,
     pub(crate) connection_events_output_file: String,
     pub(crate) connection_duration_output_file: String,
+    pub(crate) ledger_count_output_file: String,
     pub(crate) simulation_config: wantlist::EngineSimulationConfig,
 }
 

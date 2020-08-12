@@ -11,6 +11,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use ipfs_resolver_common::{logging, wantlist, Result};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter};
@@ -45,7 +46,7 @@ fn main() -> Result<()> {
     let conf = config::Config::open(conf_file).context("unable to load config")?;
 
     info!(
-        "output file for wantlist messages is {}",
+        "output file for wantlist entries is {}",
         conf.wantlist_output_file_pattern
     );
     info!(
@@ -56,6 +57,10 @@ fn main() -> Result<()> {
         "output file for connection durations is {}",
         conf.connection_duration_output_file
     );
+    info!(
+        "output file for ledger counts is {}",
+        conf.ledger_count_output_file
+    );
     debug!("simulation config is {:?}", conf.simulation_config);
 
     do_transform(conf).context("unable to do transformation")?;
@@ -65,7 +70,14 @@ fn main() -> Result<()> {
 
 struct SingleFileTransformResult {
     timestamps: Option<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>,
-    num_missing_ledgers: i32,
+    num_missing_ledgers: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CSVLedgerCount {
+    ts_secs: i64,
+    missing_ledgers: usize,
+    total_ledgers: usize,
 }
 
 fn do_transform_single_file(
@@ -131,7 +143,7 @@ fn do_transform_single_file(
 }
 
 fn do_transform(cfg: config::Config) -> Result<()> {
-    let mut wl = wantlist::EngineSimulation::new(cfg.simulation_config.clone())
+    let mut engine = wantlist::EngineSimulation::new(cfg.simulation_config.clone())
         .context("unable to set up engine simulation")?;
     let mut current_message_id: i64 = 0;
     let mut conn_tracker = ConnectionDurationTracker::new();
@@ -148,6 +160,13 @@ fn do_transform(cfg: config::Config) -> Result<()> {
         io::BufWriter::new(
             std::fs::File::create(cfg.connection_duration_output_file.clone())
                 .context("unable to open connection duration output file for writing")?,
+        ),
+        Compression::default(),
+    ));
+    let mut ledger_count_output_writer = csv::Writer::from_writer(GzEncoder::new(
+        io::BufWriter::new(
+            std::fs::File::create(cfg.ledger_count_output_file.clone())
+                .context("unable to open missing ledgers output file for writing")?,
         ),
         Compression::default(),
     ));
@@ -179,7 +198,7 @@ fn do_transform(cfg: config::Config) -> Result<()> {
             input_file,
             &mut wl_output_writer,
             &mut conn_events_output_writer,
-            &mut wl,
+            &mut engine,
             &mut current_message_id,
             &mut conn_tracker,
         )
@@ -197,11 +216,24 @@ fn do_transform(cfg: config::Config) -> Result<()> {
         match transform_result.timestamps {
             Some((first, last)) => {
                 info!("first ts: {}, last ts: {}", first, last);
+
+                ledger_count_output_writer
+                    .serialize(CSVLedgerCount {
+                        ts_secs: last.timestamp(),
+                        missing_ledgers: transform_result.num_missing_ledgers,
+                        total_ledgers: engine.num_ledgers(),
+                    })
+                    .context("unable to serialize missing ledgers record")?;
+
                 final_ts.replace(last);
             }
             None => info!("empty file?"),
         }
-        info!("{} missing ledgers", transform_result.num_missing_ledgers);
+        info!(
+            "{} missing ledgers, {} ledgers total",
+            transform_result.num_missing_ledgers,
+            engine.num_ledgers()
+        );
     }
 
     info!("finalizing connection tracker...");
