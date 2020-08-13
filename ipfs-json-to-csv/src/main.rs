@@ -6,6 +6,7 @@ mod conntrack;
 
 use crate::conntrack::ConnectionDurationTracker;
 use clap::{App, Arg};
+use csv::Writer;
 use failure::{err_msg, ResultExt};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -180,17 +181,9 @@ fn do_transform(cfg: config::Config) -> Result<()> {
             std::fs::File::open(&path).context("unable to open input file for reading")?,
         ));
 
-        let mut wl_output_writer = csv::Writer::from_writer(GzEncoder::new(
-            io::BufWriter::new(
-                std::fs::File::create(
-                    cfg.wantlist_output_file_pattern
-                        .clone()
-                        .replace("$id$", &format!("{:09}", current_message_id)),
-                )
-                .context("unable to open wantlist output file for writing")?,
-            ),
-            Compression::default(),
-        ));
+        let mut wl_output_writer =
+            create_wl_output_writer(cfg.wantlist_output_file_pattern.clone(), current_message_id)
+                .context("unable to create output file")?;
 
         let id_before = current_message_id;
         let before = std::time::Instant::now();
@@ -253,5 +246,35 @@ fn do_transform(cfg: config::Config) -> Result<()> {
         warn!("missing final timestamp, unable to finalize")
     }
 
+    info!("finalizing engine simulation...");
+    if let Some(ts) = final_ts {
+        let end_of_simulation_cancels =
+            engine.generate_end_of_simulation_entries(ts, current_message_id + 1);
+
+        let mut wl_output_writer =
+            create_wl_output_writer(cfg.wantlist_output_file_pattern.clone(), current_message_id)
+                .context("unable to create output file")?;
+
+        end_of_simulation_cancels
+            .iter()
+            .try_for_each(|e| wl_output_writer.serialize(e))
+            .context("unable to serialize end-of-simulation synthetic cancels")?;
+    } else {
+        warn!("missing final timestamp, unable to finalize")
+    }
+
     Ok(())
+}
+
+fn create_wl_output_writer(
+    pattern: String,
+    current_message_id: i64,
+) -> Result<Writer<GzEncoder<BufWriter<std::fs::File>>>> {
+    Ok(csv::Writer::from_writer(GzEncoder::new(
+        io::BufWriter::new(
+            std::fs::File::create(pattern.replace("$id$", &format!("{:09}", current_message_id)))
+                .context("unable to open wantlist output file for writing")?,
+        ),
+        Compression::default(),
+    )))
 }

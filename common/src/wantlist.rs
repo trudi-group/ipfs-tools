@@ -57,6 +57,7 @@ pub const CSV_ENTRY_TYPE_WANT_HAVE: i32 = 4;
 pub const CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE: i32 = 5;
 pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_FULL_WANTLIST: i32 = 6;
 pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_DISCONNECT: i32 = 7;
+pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_END_OF_SIMULATION: i32 = 8;
 
 /// Connection event type constants for CSV files.
 pub const CSV_CONNECTION_EVENT_CONNECTED_FOUND: i32 = 1;
@@ -332,6 +333,39 @@ impl EngineSimulation {
             peers: HashMap::new(),
             cfg,
         })
+    }
+
+    pub fn generate_end_of_simulation_entries(
+        self,
+        ts: chrono::DateTime<chrono::Utc>,
+        msg_id: i64,
+    ) -> Vec<CSVWantlistEntry> {
+        let ts_secs = ts.timestamp();
+        let ts_subsec_milliseconds = ts.timestamp_subsec_millis();
+        self.peers
+            .into_iter()
+            .map(|(peer_id, ledger)| {
+                ledger
+                    .wanted_entries
+                    .into_iter()
+                    .map(move |e| CSVWantlistEntry {
+                        message_id: msg_id,
+                        message_type: CSV_MESSAGE_TYPE_SYNTHETIC,
+                        timestamp_seconds: ts_secs,
+                        timestamp_subsec_milliseconds: ts_subsec_milliseconds,
+                        peer_id: peer_id.clone(),
+                        address: "".to_string(),
+                        priority: 0,
+                        entry_type: CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_END_OF_SIMULATION,
+                        cid: e.cid,
+                        duplicate_status: CSV_DUPLICATE_STATUS_NO_DUP,
+                        sliding_window_smallest_match: 0,
+                        secs_since_earlier_message: 0,
+                        upgrades_earlier_request: false,
+                    })
+            })
+            .flatten()
+            .collect()
     }
 
     fn ingest_wantlist_message(
