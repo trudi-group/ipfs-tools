@@ -36,6 +36,7 @@ impl ConnectionMetadata {
     }
 }
 
+/// Metadata about an overlay session, to be serialized to CSV.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct CSVConnectionMetadata {
     peer_id: String,
