@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::mem;
 
-/// Constants for the `want_type` field of an `JSONWantlistEntry`.
+/// Constants for the `want_type` field of a `JSONWantlistEntry`.
 pub const JSON_WANT_TYPE_BLOCK: i32 = 0;
 pub const JSON_WANT_TYPE_HAVE: i32 = 1;
 
@@ -66,11 +66,13 @@ pub const CSV_CONNECTION_EVENT_DISCONNECTED_FOUND: i32 = 3;
 pub const CSV_CONNECTION_EVENT_DISCONNECTED_NOT_FOUND: i32 = 4;
 
 /// Reasons for duplicate messages.
+/// These function as a bitfield.
 pub const CSV_DUPLICATE_STATUS_NO_DUP: u32 = 0;
 pub const CSV_DUPLICATE_STATUS_DUP_FULL_WANTLIST: u32 = 1;
 pub const CSV_DUPLICATE_STATUS_DUP_RECONNECT: u32 = 2;
 pub const CSV_DUPLICATE_STATUS_DUP_SLIDING_WINDOW: u32 = 4;
 
+/// A wantlist entry, to be serialized as CSV.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CSVWantlistEntry {
     pub message_id: i64,
@@ -193,6 +195,7 @@ impl CSVWantlistEntry {
     }
 }
 
+/// A connection event, to be serialized as CSV.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CSVConnectionEvent {
     pub message_id: i64,
