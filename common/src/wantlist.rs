@@ -10,14 +10,14 @@ pub const JSON_WANT_TYPE_BLOCK: i32 = 0;
 pub const JSON_WANT_TYPE_HAVE: i32 = 1;
 
 /// The JSON encoding of a CID.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct JsonCID {
     #[serde(rename = "/")]
     pub path: String,
 }
 
 /// A single entry of a wantlist message.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct JSONWantlistEntry {
     #[serde(alias = "Priority")]
     pub priority: i32,
@@ -265,7 +265,10 @@ impl WantType {
         match e.want_type {
             JSON_WANT_TYPE_BLOCK => WantType::Block,
             JSON_WANT_TYPE_HAVE => WantType::Have,
-            _ => panic!("attempted to create WantType from weird JSON entry"),
+            _ => panic!(
+                "attempted to create WantType from weird JSON entry: {:?}",
+                e
+            ),
         }
     }
 
@@ -273,7 +276,7 @@ impl WantType {
         match e.entry_type {
             CSV_ENTRY_TYPE_WANT_BLOCK | CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE => WantType::Block,
             CSV_ENTRY_TYPE_WANT_HAVE | CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE => WantType::Have,
-            _ => panic!("attempted to create WantType from weird CSV entry"),
+            _ => panic!("attempted to create WantType from weird CSV entry: {:?}", e),
         }
     }
 }
