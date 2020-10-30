@@ -25,14 +25,6 @@ impl Config {
 
     pub(crate) fn glob_results(&self) -> Result<Vec<PathBuf>> {
         let input_globs = self.input_globs.clone();
-        let mut entries = Vec::new();
-
-        for pattern in input_globs {
-            let ent: std::result::Result<Vec<PathBuf>, _> =
-                glob::glob(&pattern).context("invalid glob")?.collect();
-            entries.extend(ent.context("unable to traverse path")?.into_iter());
-        }
-
-        Ok(entries)
+        ipfs_resolver_common::expand_globs(input_globs)
     }
 }

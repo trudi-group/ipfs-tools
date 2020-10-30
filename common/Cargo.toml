@@ -18,3 +18,4 @@ hyper = "0.13.5"
 reqwest = { version = "0.10.4", features = ["blocking","json"] }
 ipfs-api = "0.7.1"
 percent-encoding = "2.1.0"
+glob = "^0.3"
