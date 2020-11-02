@@ -288,21 +288,54 @@ pub struct WantlistEntry {
     ts: chrono::DateTime<chrono::Utc>,
 }
 
+/// A ledger keeps track of the entries WANTed by a peer, and some metadata about connection status
+/// and timestamps.
 #[derive(Clone, Debug)]
 pub struct Ledger {
+    /// A counter for parallel connections.
+    /// In the optimal case this is always zero or one, but IPFS misreports events sometimes.
+    /// We assert that this is never less than zero.
     connection_count: i32,
+
+    /// The entries currently WANTed by this peer, sorted by CID.
+    /// This is checked to not contain duplicates.
     wanted_entries: Vec<WantlistEntry>,
+
+    /// The entries WANTed by this peer immediately before we got disconnected.
     wanted_entries_before_disconnect: Option<Vec<WantlistEntry>>,
+
+    /// The beginning of the current overlay session, if we are connected.
     connected_ts: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// The configuration of our engine simulation.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EngineSimulationConfig {
+    /// Whether to allow the `full_want_list` field to be unspecified in JSON messages.
+    /// This is for historic reasons, as we did not track this field in the very beginning of our
+    /// recordings.
+    /// For anything remotely new, this should be set to `false`.
     pub allow_empty_full_wantlist: bool,
+
+    /// Whether to allow the `peer_connected` and `peer_disconnected` fields to be unspecified in
+    /// JSON messages.
+    /// This should usually be set to `false` when dealing with modern recordings.
     pub allow_empty_connection_event: bool,
+
+    /// Whether to emit `SYNTHETIC_CANCEL` records for entries "canceled" through a `full_wantlist`.
     pub insert_full_wantlist_synth_cancels: bool,
+    /// Whether to emit `SYNTHETIC_CANCEL` records for entries "canceled" through the peer
+    /// disconnecting.
     pub insert_disconnect_synth_cancels: bool,
+
+    /// The number of seconds after a peer reconnects to us to consider for marking messages as
+    /// duplicates.
+    /// This is relevant in order to judge whether a peer has longstanding WANTed entries which are
+    /// resent on a reconnect.
     pub reconnect_duplicate_duration_secs: u32,
+
+    /// The window sizes in seconds to sort duplicate entries into.
+    /// These will eventually be sorted.
     pub sliding_window_lengths: Vec<u32>,
 }
 
@@ -396,6 +429,8 @@ impl EngineSimulation {
         let (mut full_wl_dups, mut full_wl_synth_cancels) = (None, None);
         let (new_wants, new_cancels) = Self::split_wants_cancels(&entries);
 
+        // Compute entry time differences and upgrade statuses between the new message and the
+        // existing ledger.
         let offsets_since_earlier_messages =
             Self::get_secs_until_earlier_message_with_same_cid_and_want_type(
                 ledger,
@@ -411,6 +446,7 @@ impl EngineSimulation {
             msg.timestamp.clone(),
         );
 
+        // Now update the ledger.
         match &msg.full_want_list {
             Some(full) => match full {
                 true => {
@@ -488,7 +524,7 @@ impl EngineSimulation {
         let mut entries = CSVWantlistEntry::from_json_message(msg.clone(), msg_id)
             .context("unable to convert entries to JSON")?;
 
-        // Mark duplicates
+        // Mark duplicates in the generated entries.
         for entry in entries.iter_mut() {
             if entry.entry_type == CSV_ENTRY_TYPE_CANCEL {
                 // Cancels are never dups (I hope).
@@ -517,7 +553,9 @@ impl EngineSimulation {
         }
 
         // Now figure out sliding window stuff.
-        // This here costs performance but better be safe than sorry.
+        // We first make sure the number of non-CANCEL entries is the same as the number of offsets
+        // we calculated earlier (for non-CANCEL entries).
+        // This costs performance but better be safe than sorry...
         assert_eq!(
             entries
                 .iter()
@@ -526,7 +564,8 @@ impl EngineSimulation {
             offsets_since_earlier_messages.len()
         );
 
-        // We now know they are the same length and same ordering, so we can zip 'em up and be gucci.
+        // We now know they are the same length and same ordering, so we can zip 'em up and be
+        // gucci.
         entries
             .iter_mut()
             .filter(|e| e.entry_type != CSV_ENTRY_TYPE_CANCEL)
@@ -552,6 +591,7 @@ impl EngineSimulation {
             });
 
         // And figure out whether requests are upgraded.
+        // Again, figure out if the length of these match.
         assert_eq!(
             entries
                 .iter()
@@ -568,7 +608,8 @@ impl EngineSimulation {
                 e.upgrades_earlier_request = upgraded;
             });
 
-        // Add time-since-request for CANCELs...
+        // Add time-since-request for CANCELs.
+        // Again, verify the length of these match.
         assert_eq!(
             entries
                 .iter()
@@ -843,7 +884,8 @@ impl EngineSimulation {
                                 warn!("connect event had connect_event_peer_found=true, but our ledger has zero connections for peer {}", msg.peer);
                             } else if !found && ledger.connection_count > 0 {
                                 warn!("connect event had connect_event_peer_found=false, but we have a ledger with at least one connection for peer {}", msg.peer);
-                                // To be consistent with IPFS behaviour, we assume IPFS is right about found==false and didn't report an earlier disconnect.
+                                // To be consistent with IPFS behaviour, we assume IPFS is right
+                                // about found==false and didn't report an earlier disconnect.
                                 // That means we need to clear out our ledger.
                                 let entries = mem::take(&mut ledger.wanted_entries);
                                 ledger.wanted_entries_before_disconnect = Some(entries);
