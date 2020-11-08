@@ -498,7 +498,7 @@ impl EngineSimulation {
                         msg.timestamp.clone(),
                     )?;
                 } else {
-                    error!("got empty full_want_list, but is not allowed.");
+                    error!("got empty full_want_list: {:?}", msg);
                     return Err(err_msg("got empty full_want_list, should be set"));
                 }
             }
@@ -800,6 +800,7 @@ impl EngineSimulation {
     }
 
     fn ingest_connection_event(&mut self, msg: &JSONMessage, msg_id: i64) -> Result<IngestResult> {
+        debug!("ingesting connection event {:?}", msg);
         let mut missing_ledger = false;
         match &msg.peer_disconnected {
             Some(disconnected) => {
@@ -815,16 +816,27 @@ impl EngineSimulation {
                         if found {
                             debug!("disconnect event had connect_event_peer_found=true, but we don't have a ledger for peer {}", msg.peer);
                         }
-                        // If not present, we return a fresh entry with one connection, because we decrement the counter right away.
+                        // If not present, we return a fresh entry with one connection, because we
+                        // decrement the counter right away.
+                        debug!("creating new ledger with one connection for peer {} since we got a disconnection event",msg.peer);
                         missing_ledger = true;
                         Ledger { connection_count: 1, wanted_entries: Default::default(), wanted_entries_before_disconnect: Default::default(), connected_ts: Some(msg.timestamp.clone()) }
                     });
+                    debug!("working on ledger {:?}", ledger);
 
                     ledger.connection_count -= 1;
-                    assert!(ledger.connection_count >= 0);
+                    if ledger.connection_count < 0 {
+                        warn!(
+                            "got disconnected from disconnected peer. Setting connection count to zero. Ledger: {:?}, message: {:?}",
+                            ledger,
+                            msg
+                        );
+                        ledger.connection_count = 0;
+                    }
 
                     if ledger.connection_count == 0 {
                         if !ledger.wanted_entries.is_empty() {
+                            debug!("found wanted entries, generating synthetic CANCELs");
                             ledger.wanted_entries_before_disconnect =
                                 Some(mem::take(&mut ledger.wanted_entries));
 
@@ -898,15 +910,16 @@ impl EngineSimulation {
                         }
                     }
 
-                    let ledger = self
-                        .peers
-                        .entry(msg.peer.clone())
-                        .or_insert_with(|| Ledger {
+                    let ledger = self.peers.entry(msg.peer.clone()).or_insert_with(|| {
+                        debug!("creating new ledger for connection event");
+                        Ledger {
                             connection_count: 0,
                             wanted_entries: Default::default(),
                             wanted_entries_before_disconnect: Default::default(),
                             connected_ts: Some(msg.timestamp.clone()),
-                        });
+                        }
+                    });
+                    debug!("working with ledger {:?}", ledger);
 
                     ledger.connection_count += 1;
                 }
@@ -939,11 +952,29 @@ impl EngineSimulation {
         match &msg.received_entries {
             Some(entries) => {
                 // This is a wantlist message.
-                self.ingest_wantlist_message(msg, entries, msg_id)
+                debug!(
+                    "ledger before ingestion of wantlist message is {:?}",
+                    self.peers.get(&msg.peer)
+                );
+                let res = self.ingest_wantlist_message(msg, entries, msg_id);
+                debug!(
+                    "ledger after ingestion of wantlist message is {:?}",
+                    self.peers.get(&msg.peer)
+                );
+                res
             }
             None => {
                 // This is a connection event.
-                self.ingest_connection_event(msg, msg_id)
+                debug!(
+                    "ledger before ingestion of connection event is {:?}",
+                    self.peers.get(&msg.peer)
+                );
+                let res = self.ingest_connection_event(msg, msg_id);
+                debug!(
+                    "ledger after ingestion of connection event is {:?}",
+                    self.peers.get(&msg.peer)
+                );
+                res
             }
         }
     }
