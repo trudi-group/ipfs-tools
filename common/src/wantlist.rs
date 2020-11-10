@@ -32,6 +32,7 @@ pub struct JSONWantlistEntry {
 }
 
 /// A wantlist message.
+/// These are produced by the modified Go implementation of IPFS.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct JSONMessage {
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -75,18 +76,46 @@ pub const CSV_DUPLICATE_STATUS_DUP_SLIDING_WINDOW: u32 = 4;
 /// A wantlist entry, to be serialized as CSV.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CSVWantlistEntry {
+    /// A synthetic counter which is incremented for every object in the stream of logged
+    /// `JSONMessage`s.
+    /// This is used to group `want_list` entries from the same message etc.
     pub message_id: i64,
+
+    /// Message type, see `CSV_MESSAGE_TYPE_`constants.
     pub message_type: i32,
+
+    /// Timestamp as seconds since the Unix epoch.
     pub timestamp_seconds: i64,
+    /// Sub-second milliseconds of the timestamp.
     pub timestamp_subsec_milliseconds: u32,
+
+    /// The ID of the sending peer.
     pub peer_id: String,
+    /// The underlay multiaddress of the sending peer, if available.
     pub address: String,
+
+    /// The `priority` field as was sent in the original JSON message.
     pub priority: i32,
+    /// Entry type, see `CSV_ENTRY_TYPE_` constants.
     pub entry_type: i32,
+    /// The human-readable CID as was sent in the original JSON message, not normalized.
     pub cid: String,
+
+    /// Marks _request_ messages as duplicates, see `CSV_DUPLICATE_STATUS` constants.
+    /// This functions as a bitfield, i.e. an entry that is both a `full_wantlist` and a `reconnect`
+    /// duplicate will have `duplicate_status` set to
+    /// `CSV_DUPLICATE_STATUS_DUP_FULL_WANTLIST | CSV_DUPLICATE_STATUS_DUP_RECONNECT`.
+    /// This does not apply to CANCEL entries.
     pub duplicate_status: u32,
+    /// Indicates the smallest sliding window that matched for a sliding window duplicate request
+    /// entry. This does not apply to CANCEL entries
     pub sliding_window_smallest_match: u32,
+    /// Lists the time difference in seconds between duplicate requests or request-CANCEL pairs.
+    /// If the entry type is CANCEL, the latter applies.
     pub secs_since_earlier_message: u32,
+    /// Indicates whether this request upgrades an earlier request.
+    /// This is only valid for requests of type `WANT_BLOCK`, as they can upgrade earlier
+    /// `WANT_HAVE` requests.
     pub upgrades_earlier_request: bool,
 }
 
@@ -180,7 +209,7 @@ impl CSVWantlistEntry {
                                 CSV_ENTRY_TYPE_WANT_HAVE
                             }
                         }
-                        _ => panic!(format!("unknown JSON want type {}", entry.want_type)),
+                        _ => panic!("unknown JSON want type {}", entry.want_type),
                     }
                 },
                 cid: entry.cid.path,
@@ -198,11 +227,21 @@ impl CSVWantlistEntry {
 /// A connection event, to be serialized as CSV.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CSVConnectionEvent {
+    /// A synthetic counter which is incremented for every object in the stream of logged
+    /// `JSONMessage`s.
+    /// This is used to group want_list entries from the same message etc.
     pub message_id: i64,
+
+    /// Timestamp as seconds since the Unix epoch.
     pub timestamp_seconds: i64,
+    /// Sub-second milliseconds of the timestamp.
     pub timestamp_subsec_millis: u32,
+
+    /// The human-readable ID of the sending peer.
     pub peer_id: String,
+    /// The underlay multiaddress of the sending peer, if available.
     pub address: String,
+    /// The type of the connection event, see the `CSV_CONNECTION_TYPE_` constants.
     pub event_type: i32,
 }
 
@@ -219,7 +258,7 @@ impl CSVConnectionEvent {
             .ok_or_else(|| err_msg("connection event is missing peer_connected"))?;
         ensure!(
             disconnected || connected,
-            "connection event needs either connected or disconnected to be set.."
+            "connection event needs either connected or disconnected to be set..."
         );
         ensure!(
             !(disconnected && connected),
@@ -339,6 +378,7 @@ pub struct EngineSimulationConfig {
     pub sliding_window_lengths: Vec<u32>,
 }
 
+/// A simulation of the BitSwap engine as was present in v0.5 of the Go IPFS client.
 #[derive(Clone, Debug, Default)]
 pub struct EngineSimulation {
     peers: HashMap<String, Ledger>,
@@ -374,6 +414,7 @@ impl EngineSimulation {
         })
     }
 
+    /// Generates end-of-simulation synthetic CANCEL entries.
     pub fn generate_end_of_simulation_entries(
         self,
         ts: chrono::DateTime<chrono::Utc>,
@@ -948,6 +989,7 @@ impl EngineSimulation {
         })
     }
 
+    /// Ingests a new message, advancing the simulation and emitting entries.
     pub fn ingest(&mut self, msg: &JSONMessage, msg_id: i64) -> Result<IngestResult> {
         match &msg.received_entries {
             Some(entries) => {
