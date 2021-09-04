@@ -1,6 +1,6 @@
 [package]
-name = "gateway-finder"
-version = "0.1.0"
+name = "ipfs-gateway-finder"
+version = "0.2.0"
 authors = ["Leo Balduf <leobalduf@gmail.com>"]
 edition = "2018"
 
@@ -24,3 +24,5 @@ parity-multiaddr = "0.9.0"
 ipfs-api = "0.7.2"
 cid = "0.5.1"
 http = "0.2.1"
+csv = "1.1.6"
+clap = "2.33.3"

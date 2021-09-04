@@ -34,7 +34,7 @@ Specifically, it holds the schemas, types, and functions used by all other packa
 This binary package implements a small tool that tracks the number of records in the database and exports them via
 Prometheus.
 
-### `gateway-finder`
+### `ipfs-gateway-finder`
 
 This is a binary that identifies public gateways on the overlay network.
 It downloads the list of public gateways off github, crafts CIDs, queries them, and listens for BitSwap messages for these CIDs.

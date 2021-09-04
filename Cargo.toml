@@ -6,7 +6,7 @@ members=[
 "common",
 "wantlist-client",
 "ipfs-json-to-csv",
-"gateway-finder",
+"ipfs-gateway-finder",
 "wantlist-client-lib",
 "ipfs-walk-tree",
 "cid-decode",
