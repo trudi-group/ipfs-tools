@@ -10,6 +10,7 @@ use std::env;
 use tokio::net::TcpStream;
 
 use ipfs_resolver_common::{logging, wantlist, Result};
+use prometheus::core::{AtomicI64, GenericGauge};
 use wantlist_client_lib::net::Connection;
 
 mod prom;
@@ -52,7 +53,7 @@ async fn main() -> Result<()> {
 
     let num_messages = &*prom::MESSAGES_RECEIVED;
 
-    info!("reading .env...");
+    info!("reading .env file");
     dotenv::dotenv().ok();
 
     let listen_addr = env::var("WANTLIST_CLIENT_PROMETHEUS_LISTEN_ADDR")
@@ -60,20 +61,65 @@ async fn main() -> Result<()> {
         .parse()
         .expect("invalid WANTLIST_CLIENT_PROMETHEUS_LISTEN_ADDR");
 
-    info!("starting prometheus stuff..");
-    prom::run_prometheus(listen_addr)?;
-
     let addr =
         env::var("WANTLIST_LOGGING_TCP_ADDRESS").expect("WANTLIST_LOGGING_TCP_ADDRESS must be set");
 
-    info!("connecting to wantlist server at {}...", addr);
-    let conn = TcpStream::connect(addr.as_str()).await?;
+    info!("starting prometheus server");
+    prom::run_prometheus(listen_addr)?;
 
-    let client = Connection::new(conn).await?;
+    info!("starting infinite connection loop, try Ctrl+C to exit");
+    loop {
+        let res = connect_and_receive(
+            &num_cancels,
+            &num_want_block,
+            &num_want_block_send_dont_have,
+            &num_want_have,
+            &num_want_have_send_dont_have,
+            &num_unknown,
+            &num_connected_found,
+            &num_connected_not_found,
+            &num_disconnected_found,
+            &num_disconnected_not_found,
+            num_messages,
+            &addr,
+        )
+        .await;
+
+        info!("result: {:?}", res);
+
+        info!("sleeping for one second");
+        tokio::time::delay_for(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+async fn connect_and_receive(
+    num_cancels: &GenericGauge<AtomicI64>,
+    num_want_block: &GenericGauge<AtomicI64>,
+    num_want_block_send_dont_have: &GenericGauge<AtomicI64>,
+    num_want_have: &GenericGauge<AtomicI64>,
+    num_want_have_send_dont_have: &GenericGauge<AtomicI64>,
+    num_unknown: &GenericGauge<AtomicI64>,
+    num_connected_found: &GenericGauge<AtomicI64>,
+    num_connected_not_found: &GenericGauge<AtomicI64>,
+    num_disconnected_found: &GenericGauge<AtomicI64>,
+    num_disconnected_not_found: &GenericGauge<AtomicI64>,
+    num_messages: &GenericGauge<AtomicI64>,
+    address: &str,
+) -> Result<()> {
+    info!("connecting to wantlist server at {}...", address);
+    let conn = TcpStream::connect(address).await?;
+    info!("connected.");
+
+    let client = Connection::new(conn)?;
     let _remote = client.remote;
     let mut messages_in = client.messages_in;
+    let mut first = true;
 
     while let Some(wl) = messages_in.recv().await {
+        if first {
+            first = false;
+            info!("receiving messages...")
+        }
         if wl.peer_connected.is_some() && wl.peer_connected.unwrap() {
             // Unwrap this because I hope that works...
             if wl.connect_event_peer_found.unwrap() {
@@ -81,10 +127,8 @@ async fn main() -> Result<()> {
             } else {
                 num_connected_not_found.inc();
             }
-            println!(
-                "{} {} {:38} {:25}",
-                wl.timestamp
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            debug!(
+                "{} {:38} {:25}",
                 wl.peer,
                 match &wl.address {
                     Some(address) => address.to_string(),
@@ -102,10 +146,8 @@ async fn main() -> Result<()> {
             } else {
                 num_disconnected_not_found.inc();
             }
-            println!(
-                "{} {} {:38} {:25}",
-                wl.timestamp
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            debug!(
+                "{} {:38} {:25}",
                 wl.peer,
                 match &wl.address {
                     Some(address) => address.to_string(),
@@ -141,10 +183,8 @@ async fn main() -> Result<()> {
                             num_unknown.inc();
                         }
 
-                        println!(
-                            "{} {} {:38} {:4} {:25} ({:10}) {}",
-                            wl.timestamp
-                                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                        debug!(
+                            "{} {:38} {:4} {:25} ({:10}) {}",
                             wl.peer,
                             match &wl.address {
                                 Some(address) => address.to_string(),
@@ -183,14 +223,14 @@ async fn main() -> Result<()> {
                         )
                     }
                 }
-                None => println!("empty entries"),
+                None => debug!("empty entries"),
             }
         } else {
-            println!("no connect/disconnect event and no entries?")
+            warn!("no connect/disconnect event and no entries?")
         }
     }
 
-    println!("shut down");
+    info!("disconnected?");
 
-    Ok(())
+    Ok(()) // I guess?
 }

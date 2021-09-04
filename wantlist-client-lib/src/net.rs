@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use failure::ResultExt;
 use futures::select;
 use futures::StreamExt;
 use futures_util::future::FutureExt;
@@ -16,13 +17,23 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub async fn new(conn: TcpStream) -> Result<Connection> {
+    pub fn new(conn: TcpStream) -> Result<Connection> {
         let remote = conn.peer_addr()?;
+        // Set SO_NODELAY, i.e. disable Nagle's algorithm.
+        // What we really want is setting TCP_QUICKACK, i.e. disable delayed ACKs.
+        // But we can't do that cross-platform...
+        conn.set_nodelay(true)
+            .context("unable to disable Nagle's algorithm")?;
+        // We also set this giant buffer size, hopefully that helps.
+        conn.set_recv_buffer_size(32 * 1024 * 1024 + 4)
+            .context("unable to set large receive buffer")?;
+
         // Set up length-delimited frames
         let framed = Framed::new(
             conn,
             LengthDelimitedCodec::builder()
                 .length_field_length(4)
+                .max_frame_length(32 * 1024 * 1024) // 32 MiB maximum frame size, which is _gigantic_, but necessary in some cases.
                 .new_codec(),
         );
 
