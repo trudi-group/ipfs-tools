@@ -1,8 +1,6 @@
 use bytes::Bytes;
 use failure::ResultExt;
-use futures::select;
 use futures::StreamExt;
-use futures_util::future::FutureExt;
 use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::Result;
 use std::net::SocketAddr;
@@ -11,6 +9,9 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+/// A connection implements receiving JSON messages from a bitswap logging monitor.
+/// The messages are read from the underlying TCP socket within length-delimited frames and then
+/// JSON-decoded.
 pub struct Connection {
     pub remote: SocketAddr,
     pub messages_in: Receiver<JSONMessage>,
@@ -25,7 +26,8 @@ impl Connection {
         conn.set_nodelay(true)
             .context("unable to disable Nagle's algorithm")?;
         // We also set this giant buffer size, hopefully that helps.
-        conn.set_recv_buffer_size(32 * 1024 * 1024 + 4)
+        // This is enough space for four maximum-sized frames, including their length frame.
+        conn.set_recv_buffer_size((32 * 1024 * 1024 + 4) * 4)
             .context("unable to set large receive buffer")?;
 
         // Set up length-delimited frames
@@ -33,14 +35,12 @@ impl Connection {
             conn,
             LengthDelimitedCodec::builder()
                 .length_field_length(4)
-                .max_frame_length(32 * 1024 * 1024) // 32 MiB maximum frame size, which is _gigantic_, but necessary in some cases.
+                .max_frame_length(32 * 1024 * 1024) // 32 MiB maximum frame size, which is _gigantic_ but necessary in some cases.
                 .new_codec(),
         );
 
         // Set up some plumbing...
-        //let (mut tx_encode, rx_encode) = channel::<Bytes>(100);
         let (tx_decode, mut rx_decode) = channel::<Bytes>(100);
-        //let (tx_message_out, mut rx_message_out) = channel::<Message>(100);
         let (mut tx_message_in, rx_message_in) = channel::<JSONMessage>(100);
 
         // Decode incoming messages
@@ -69,9 +69,7 @@ impl Connection {
         });
 
         // Handle socket I/O
-        task::spawn(Self::handle_socket_io(
-            remote, framed, tx_decode, /*, rx_encode*/
-        ));
+        task::spawn(Self::handle_socket_io(remote, framed, tx_decode));
 
         Ok(Connection {
             remote,
@@ -83,45 +81,24 @@ impl Connection {
         remote: SocketAddr,
         mut framed: Framed<TcpStream, LengthDelimitedCodec>,
         mut bytes_in: Sender<Bytes>,
-        //mut bytes_out: Receiver<Bytes>,
     ) {
-        loop {
-            select! {
-                in_bytes = framed.next().fuse() => {
-                    if in_bytes.is_none() {
-                        debug!("I/O {}: incoming connection closed",remote);
-                        break;
-                    }
-                    let in_bytes = in_bytes.unwrap();
-                    if let Err(e) = in_bytes {
-                        error!("I/O {}: socket read error: {:?}",remote,e);
-                        break;
-                    }
+        while let Some(in_bytes) = framed.next().await {
+            if let Err(e) = in_bytes {
+                error!("I/O {}: socket read error: {:?}, shutting down", remote, e);
+                return;
+            }
 
-                    let res = bytes_in.send(in_bytes.unwrap().freeze()).await;
-                    if let Err(e) = res {
-                        // This can only happen if the decoder shut down, i.e. we're dropping the
-                        // client.
-                        debug!("I/O {}: unable to send to decoder: {:?}",remote,e);
-                        break;
-                    }
-                },
-                /*out_bytes = bytes_out.recv().fuse() => {
-                    if let None = out_bytes {
-                        debug!("I/O {}: outgoing byte stream closed",remote);
-                        break;
-                    }
-                    let res = framed.send(out_bytes.unwrap()).await;
-                    if let Err(e) = res {
-                        // TODO handle backpressure? Maybe not because single producer? Maybe not
-                        // because tokio channels behave differently on send?
-                        error!("I/O {}: unable to send to socket: {:?}",remote,e);
-                        break;
-                    }
-                }*/
+            let res = bytes_in.send(in_bytes.unwrap().freeze()).await;
+            if let Err(e) = res {
+                // This can only happen if the decoder shut down, i.e. we're dropping the
+                // client.
+                debug!(
+                    "I/O {}: unable to send to decoder: {:?}, shutting down",
+                    remote, e
+                );
+                return;
             }
         }
-
-        debug!("I/O {}: shutting down", remote);
+        debug!("I/O {}: incoming connection closed, shutting down", remote);
     }
 }
