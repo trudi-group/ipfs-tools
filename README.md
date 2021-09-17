@@ -1,6 +1,6 @@
-# ipfs-resolver
+# ipfs-tools
 
-Umbrella project for all things related to resolving and analyzing IPFS blocks with Rust.
+Umbrella project for all things related to monitoring, indexing, and analyzing IPFS stuff with Rust.
 
 Most of the sub-projects have their own README to explain some things in more detail.
 
@@ -37,7 +37,8 @@ Prometheus.
 ### `ipfs-gateway-finder`
 
 This is a binary that identifies public gateways on the overlay network.
-It downloads the list of public gateways off github, crafts CIDs, queries them, and listens for BitSwap messages for these CIDs.
+It downloads the list of public gateways off GitHub, crafts CIDs, queries them, and listens for BitSwap messages for 
+these CIDs.
 
 ### `ipfs-json-to-csv`
 
@@ -51,19 +52,26 @@ It can traverse the DAG downwards as well as upwards, if we have parent blocks i
 
 ### `resolver`
 
-This binary package produces the actual resolver.
+This binary package produces an indexer.
 It interacts with an IPFS node via HTTP, parses IPFS blocks' protobuf, and finally puts the results in a database.
 
 ### `wantlist-client` and `wantlist-client-lib`
 
 This binary package implements a TCP client to the TCP server implemented in `go-bitswap`.
-This makes it possible to receive and process wantlist messages in real-time.
+This makes it possible to receive and process BitSwap messages in real-time.
 Additionally, the binary runs a prometheus server to publish metrics about the number of messages received.
+
+### `unify-bitswap-traces`
+
+This binary is used to unify traces from multiple monitors into CSV files for processing in R.
+This is the tool used for [this paper](https://arxiv.org/abs/2104.09202).
 
 ## Building
 
 You'll need the latest stable Rust.
 You'll also need `protoc`, the protocol buffer compiler, from Google, somewhere on your `PATH`.
+You need a few libraries, namely something to run [cursive](https://github.com/gyscos/cursive/wiki/Install-ncurses) (e.g. `libncursesw5-dev` on Ubuntu) and some SSL library,
+probably `libssl-dev`.
 Then just:
 
 ```
@@ -75,6 +83,6 @@ Also, this will build all sub-projects, which then end up in the `target/` direc
 
 ## Configuration
 
-All of the packages are configured via environment variables/`.env` files.
-The packages contain README files that detail their configuration, and an example, complete `.env` file is given in
+Most of the packages are configured via environment variables/`.env` files.
+The packages sometimes contain README files that detail their configuration, and an example, mostly complete `.env` file is given in
 [.env](.env).
