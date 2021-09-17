@@ -60,6 +60,20 @@ pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_FULL_WANTLIST: i32 = 6;
 pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_DISCONNECT: i32 = 7;
 pub const CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_END_OF_SIMULATION: i32 = 8;
 
+pub fn csv_entry_type_is_request(entry_type: i32) -> bool {
+    match entry_type {
+        CSV_ENTRY_TYPE_CANCEL
+        | CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_FULL_WANTLIST
+        | CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_DISCONNECT
+        | CSV_ENTRY_TYPE_SYNTHETIC_CANCEL_END_OF_SIMULATION => false,
+        CSV_ENTRY_TYPE_WANT_BLOCK
+        | CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE
+        | CSV_ENTRY_TYPE_WANT_HAVE
+        | CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE => true,
+        _ => panic!("invalid entry type {}", entry_type),
+    }
+}
+
 /// Connection event type constants for CSV files.
 pub const CSV_CONNECTION_EVENT_CONNECTED_FOUND: i32 = 1;
 pub const CSV_CONNECTION_EVENT_CONNECTED_NOT_FOUND: i32 = 2;
@@ -73,6 +87,7 @@ pub const CSV_DUPLICATE_STATUS_DUP_FULL_WANTLIST: u32 = 1;
 pub const CSV_DUPLICATE_STATUS_DUP_RECONNECT: u32 = 2;
 pub const CSV_DUPLICATE_STATUS_DUP_SLIDING_WINDOW: u32 = 4;
 
+// TODO keep this in sync with `unification::matcher::OutputCSVWantlistEntry`.
 /// A wantlist entry, to be serialized as CSV.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CSVWantlistEntry {

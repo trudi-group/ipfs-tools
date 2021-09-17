@@ -11,4 +11,5 @@ members=[
 "ipfs-walk-tree",
 "cid-decode",
 "csv-to-graph",
+"unify-bitswap-traces",
 ]
