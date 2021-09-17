@@ -1,0 +1,20 @@
+# This is a config file for the ipfs-json-to-csv tool.
+input_globs:
+  - "../.../../archive/wantlists/wantlist.json.2020-07-30*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-07-31*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-08-01*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-08-02*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-08-03*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-08-04*.gz"
+  - "../.../../archive/wantlists/wantlist.json.2020-08-05*.gz"
+wantlist_output_file_pattern: "tmp/wl-$id$.csv.gz"
+connection_events_output_file: "tmp/conn_events.csv.gz"
+connection_duration_output_file: "tmp/conn_durs.csv.gz"
+ledger_count_output_file: "tmp/ledgers.csv.gz"
+simulation_config:
+  allow_empty_full_wantlist: false
+  allow_empty_connection_event: false
+  insert_full_wantlist_synth_cancels: true
+  insert_disconnect_synth_cancels: true
+  reconnect_duplicate_duration_secs: 5
+  sliding_window_lengths: [1,9,11,29,31,601,3601,604801]
