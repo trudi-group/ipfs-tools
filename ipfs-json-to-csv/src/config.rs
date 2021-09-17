@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Config {
-    input_globs: Vec<String>,
+    pub(crate) input_globs: Vec<String>,
     pub(crate) wantlist_output_file_pattern: String,
     pub(crate) connection_events_output_file: String,
     pub(crate) connection_duration_output_file: String,
@@ -24,7 +24,6 @@ impl Config {
     }
 
     pub(crate) fn glob_results(&self) -> Result<Vec<PathBuf>> {
-        let input_globs = self.input_globs.clone();
-        ipfs_resolver_common::expand_globs(input_globs)
+        ipfs_resolver_common::expand_globs(&self.input_globs)
     }
 }
