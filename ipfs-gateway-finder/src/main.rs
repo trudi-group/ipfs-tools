@@ -61,10 +61,11 @@ async fn do_probing() -> Result<()> {
     let matches = App::new("IPFS Gateway Finder")
         .version(clap::crate_version!())
         .author("Leo Balduf <leobalduf@gmail.com>")
-        .about("Finds overlay addresses of public IPFS gateways through probing their HTTP side with crafted content.")
+        .about("Finds overlay addresses of public IPFS gateways through probing their HTTP side with crafted content.\n\
+        Prints results to STDOUT in JSON or CSV format, logs to STDERR.")
         .arg(
             Arg::with_name("bitswap_server_address")
-                .long("monitor_logging_addr")
+                .long("monitor-logging-addr")
                 .value_name("ADDRESS")
                 .help("The address of the bitswap monitor to connect to")
                 .default_value("localhost:4321")
@@ -72,7 +73,7 @@ async fn do_probing() -> Result<()> {
         )
         .arg(
             Arg::with_name("monitor_api_address")
-                .long("monitor_api_addr")
+                .long("monitor-api-addr")
                 .value_name("ADDRESS")
                 .help("The address of the HTTP IPFS API of the monitor")
                 .default_value("localhost:5003")
@@ -80,7 +81,7 @@ async fn do_probing() -> Result<()> {
         )
         .arg(
             Arg::with_name("http_num_tries")
-                .long("http_tries")
+                .long("http-tries")
                 .value_name("NUMBER OF TRIES")
                 .help("The number of times the HTTP request to a gateway should be tried")
                 .default_value("10")
@@ -88,7 +89,7 @@ async fn do_probing() -> Result<()> {
         )
         .arg(
             Arg::with_name("http_timeout_secs")
-                .long("http_timeout")
+                .long("http-timeout")
                 .value_name("SECONDS")
                 .help("The request timeout in seconds for HTTP requests to a gateway")
                 .default_value("60")
@@ -96,7 +97,7 @@ async fn do_probing() -> Result<()> {
         )
         .arg(
             Arg::with_name("gateway_list_url")
-                .long("gateway_list")
+                .long("gateway-list")
                 .value_name("URL")
                 .help("The URL of the JSON gateway list to use")
                 .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/master/gateways.json")
@@ -121,6 +122,7 @@ async fn do_probing() -> Result<()> {
     let u = http::uri::Builder::new()
         .scheme(http::uri::Scheme::HTTP)
         .authority(monitor_api_address)
+        .path_and_query("/")
         .build()
         .context("invalid monitor_api_address")?;
     let ipfs_client = ipfs_api::IpfsClient::from_str(u.to_string().as_str())?;
@@ -192,7 +194,7 @@ async fn do_probing() -> Result<()> {
         )?;
 
     // Wait for DHT propagation...
-    info!("waiting for DHT propagation..");
+    info!("waiting some time for DHT propagation..");
     tokio::time::delay_for(Duration::from_secs(60)).await;
 
     // Collect a list of all CIDs for easier searching.
@@ -231,14 +233,12 @@ async fn do_probing() -> Result<()> {
     .await;
 
     // Wait...
-    info!("waiting for responses...");
+    info!("waiting for HTTP probing to finish...");
     for _i in 0..gateway_states.len() {
         done_rx.recv().await.unwrap()
     }
 
-    info!(
-        "all HTTP workers are done or timed out, waiting some more time for wantlist messages..."
-    );
+    info!("all HTTP workers are done or timed out, waiting some more time for bitswap messages...");
     tokio::time::delay_for(Duration::from_secs(120)).await;
 
     // Remove data from IPFS.
