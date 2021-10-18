@@ -21,7 +21,7 @@ fn log_format(
 }
 
 pub fn set_up_logging(log_to_file: bool) -> Result<ReconfigurationHandle> {
-    let mut logger = Logger::with_env_or_str("debug").format(log_format);
+    let mut logger = Logger::with_env_or_str("info").format(log_format);
     if log_to_file {
         logger = logger
             //.log_to_file()
