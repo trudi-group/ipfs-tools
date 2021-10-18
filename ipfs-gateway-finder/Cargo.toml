@@ -11,7 +11,6 @@ ipfs-resolver-common = {path = "../common"}
 wantlist-client-lib = {path = "../wantlist-client-lib"}
 failure = "0.1.7"
 log = "0.4.8"
-dotenv = "0.15.0"
 flexi_logger = "0.15.2"
 reqwest = { version = "0.10.4", features = ["blocking","json"] }
 multibase = "0.8.0"
