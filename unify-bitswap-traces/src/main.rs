@@ -22,7 +22,8 @@ fn main() -> Result<()> {
         .author("Leo Balduf <leobalduf@gmail.com>")
         .about("unifies two JSON bitswap traces")
         .arg(
-            Arg::with_name("config")
+            Arg::with_name("cfg")
+                .long("config")
                 .value_name("PATH")
                 .default_value("config.yaml")
                 .help("the config file to load")
@@ -30,11 +31,11 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    if !matches.is_present("config") {
+    if !matches.is_present("cfg") {
         println!("{}", matches.usage());
         return Err(err_msg("missing config"));
     }
-    let cfg = matches.value_of("config").unwrap();
+    let cfg = matches.value_of("cfg").unwrap();
 
     // Read config
     info!("attempting to load config file '{}'", cfg);

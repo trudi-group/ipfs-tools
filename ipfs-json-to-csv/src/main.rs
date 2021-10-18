@@ -26,7 +26,9 @@ fn main() -> Result<()> {
              containing timestamps of the first and last entry of the file.",
         )
         .arg(
-            Arg::with_name("config")
+            Arg::with_name("cfg")
+                .long("config")
+                .value_name("CONFIG")
                 .default_value("config.yaml")
                 .help("the config file to load"),
         )
@@ -34,37 +36,34 @@ fn main() -> Result<()> {
 
     logging::set_up_logging(false)?;
 
-    if !matches.is_present("config") {
+    if !matches.is_present("cfg") {
         println!("{}", matches.usage());
         return Err(err_msg("missing config"));
     }
+    let config = matches.value_of("cfg").unwrap();
 
-    info!(
-        "attempting to load config from file '{}'",
-        matches.value_of("config").unwrap()
-    );
-    let conf_file = matches.value_of("config").unwrap();
-    let conf = config::Config::open(conf_file).context("unable to load config")?;
+    info!("attempting to load config from file '{}'", config);
+    let config = config::Config::open(config).context("unable to load config")?;
 
     info!(
         "output file for wantlist entries is {}",
-        conf.wantlist_output_file_pattern
+        config.wantlist_output_file_pattern
     );
     info!(
         "output file for connection events is {}",
-        conf.connection_events_output_file
+        config.connection_events_output_file
     );
     info!(
         "output file for connection durations is {}",
-        conf.connection_duration_output_file
+        config.connection_duration_output_file
     );
     info!(
         "output file for ledger counts is {}",
-        conf.ledger_count_output_file
+        config.ledger_count_output_file
     );
-    debug!("simulation config is {:?}", conf.simulation_config);
+    debug!("simulation config is {:?}", config.simulation_config);
 
-    do_transform(conf).context("unable to do transformation")?;
+    do_transform(config).context("unable to do transformation")?;
 
     Ok(())
 }
