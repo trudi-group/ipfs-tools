@@ -1,21 +1,21 @@
 [package]
 name = "wantlist-client"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Leo Balduf <leobalduf@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-ipfs-resolver-common = {path="../common"}
-wantlist-client-lib = {path="../wantlist-client-lib"}
-tokio = { version = "0.2.18", features = ["rt-core","tcp","sync","rt-threaded","macros","dns"] }
+ipfs-resolver-common = { path = "../common" }
+wantlist-client-lib = { path = "../wantlist-client-lib" }
+tokio = { version = "0.2.18", features = ["rt-core", "tcp", "sync", "rt-threaded", "macros", "dns"] }
 log = "0.4.8"
 flexi_logger = "0.15.2"
 failure = "0.1.7"
 futures-util = "0.3.4"
-chrono = {version="0.4.11",features=["serde"]}
-dotenv = "0.15.0"
+chrono = { version = "0.4.11", features = ["serde"] }
 prometheus_exporter = "0.4.1"
 prometheus = { version = "0.7.0", features = ["process"] }
 lazy_static = "1.4.0"
+serde = "1.0.110"
+serde_yaml = "0.8.13"
+clap = "2.33.1"

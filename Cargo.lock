@@ -3006,10 +3006,10 @@ dependencies = [
 
 [[package]]
 name = "wantlist-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
- "dotenv",
+ "clap",
  "failure",
  "flexi_logger",
  "futures-util",
@@ -3018,6 +3018,8 @@ dependencies = [
  "log",
  "prometheus",
  "prometheus_exporter",
+ "serde",
+ "serde_yaml",
  "tokio 0.2.21",
  "wantlist-client-lib",
 ]

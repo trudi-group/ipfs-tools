@@ -1,16 +1,41 @@
 # wantlist-client
 
-This package implements a client for the `go-bitswap` TCP server.
+This package implements a client for the IPFS monitoring TCP server.
+It reads and processes messages from multiple monitors and outputs various metrics via prometheus.
 
 ## Configuration
 
-As with other packages, this one also expects some configuration in a `.env` file.
-The required keys are:
+Configuration is done via a YAML configuration file.
+The location of the configuration file can be specified with the `--config` parameter, it defaults to `config.yaml`.
+This is an example config file, see also the [file](./wantlist-client-config.yaml):
 
-- `WANTLIST_LOGGING_TCP_ADDRESS` is the TCP endpoint on which the `go-bitswap` TCP server is listening.
-    For example `localhost:4321`.
-- `WANTLIST_CLIENT_PROMETHEUS_LISTEN_ADDR` is the address on which to server a Prometheus endpoint.
-    For example `'127.0.0.1:7654'`
+```yaml
+# This is a config file for the wantlist-client tool.
+monitors:
+  - name: "DE1"
+    address: "10.0.1.5:4321"
+  - name: "DE2"
+    address: "10.0.1.2:4321"
+prometheus_address: "0.0.0.0:8080"
+```
 
-It is recommended to just share the `.env` file between the Go server and the Rust client, so that they always use the
-same address.
+Each monitor is configured with a name and the remote endpoint to connect to.
+The `prometheus_address` specifies the local endpoint to listen and serve Prometheus metrics on.
+
+## Metrics
+
+Metrics are provided via a Prometheus HTTP endpoint.
+
+### `wantlist_messages_received`
+
+A counter that tracks the number of wantlist messages received by monitor.
+The IPFS instrumentation emits JSON objects that are either a connection event or a wantlist message -- this tracks only wantlist messages.
+A message may contain multiple entries.
+
+### `wantlist_entries_received`
+
+A counter that tracks the number of wantlist entries received by monitor, message type, and `send_dont_have` flag.
+
+### `connection_events`
+
+A counter that tracks the number of connection events by monitor, event type, and whether there was a ledger entry present for the peer.
