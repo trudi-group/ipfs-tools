@@ -18,6 +18,7 @@ use ipfs_resolver_common::{logging, Result};
 use std::sync::mpsc::TryRecvError;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use cursive::CursiveExt;
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();

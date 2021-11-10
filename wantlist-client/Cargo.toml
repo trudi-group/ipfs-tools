@@ -1,21 +1,22 @@
 [package]
 name = "wantlist-client"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Leo Balduf <leobalduf@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 ipfs-resolver-common = { path = "../common" }
 wantlist-client-lib = { path = "../wantlist-client-lib" }
-tokio = { version = "0.2.18", features = ["rt-core", "tcp", "sync", "rt-threaded", "macros", "dns"] }
-log = "0.4.8"
-flexi_logger = "0.15.2"
-failure = "0.1.7"
-futures-util = "0.3.4"
-chrono = { version = "0.4.11", features = ["serde"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread","time", "macros"] }
+log = "0.4.14"
+flexi_logger = "0.19.6"
+failure = "0.1.8"
+futures-util = "0.3.17"
+chrono = { version = "0.4.19", features = ["serde"] }
 prometheus_exporter = "0.4.1"
+# This needs to be matching the version prometheus_exporter uses!
 prometheus = { version = "0.7.0", features = ["process"] }
 lazy_static = "1.4.0"
 serde = "1.0.110"
 serde_yaml = "0.8.13"
-clap = "2.33.1"
+clap = "2.33.3"

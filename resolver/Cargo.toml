@@ -26,7 +26,7 @@ chrono = "0.4.11"
 diesel = { version = "1.4.4", features = ["postgres","chrono"] }
 clap = "2.33.1"
 reqwest = { version = "0.10.4", features = ["blocking","json"] }
-ipfs-api = "0.7.1"
+ipfs-api = "0.13.0"
 
 [build-dependencies]
 protobuf-codegen-pure = "2.14.0"

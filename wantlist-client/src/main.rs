@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 use crate::config::Config;
 use ipfs_resolver_common::{logging, wantlist, Result};
 use prometheus::core::{AtomicI64, GenericCounter};
-use wantlist_client_lib::net::Connection;
+use wantlist_client_lib::net::{APIClient,  EventType};
 
 mod config;
 mod prom;
@@ -87,21 +87,18 @@ async fn main() -> Result<()> {
                     .get_metric_with_label_values(&[name.as_str(), "unknown", "false"])
                     .unwrap();
 
-                let num_connected_found = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "true", "true"])
+                let num_connected = prom::CONNECTION_EVENTS
+                    .get_metric_with_label_values(&[name.as_str(), "true"])
                     .unwrap();
-                let num_connected_not_found = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "true", "false"])
-                    .unwrap();
-                let num_disconnected_found = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "false", "true"])
-                    .unwrap();
-                let num_disconnected_not_found = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "false", "false"])
+                let num_disconnected = prom::CONNECTION_EVENTS
+                    .get_metric_with_label_values(&[name.as_str(), "false"])
                     .unwrap();
 
-                let num_messages = prom::MESSAGES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str()])
+                let num_messages_incremental = prom::MESSAGES_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str(), "false"])
+                    .unwrap();
+                let num_messages_full = prom::MESSAGES_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str(), "true"])
                     .unwrap();
 
                 loop {
@@ -112,11 +109,10 @@ async fn main() -> Result<()> {
                         &num_want_have,
                         &num_want_have_send_dont_have,
                         &num_unknown,
-                        &num_connected_found,
-                        &num_connected_not_found,
-                        &num_disconnected_found,
-                        &num_disconnected_not_found,
-                        &num_messages,
+                        &num_connected,
+                        &num_disconnected,
+                        &num_messages_incremental,
+                        &num_messages_full,
                         &name,
                         &addr,
                     )
@@ -125,7 +121,7 @@ async fn main() -> Result<()> {
                     info!("monitor {}: result: {:?}", name, res);
 
                     info!("monitor {}: sleeping for one second", name);
-                    tokio::time::delay_for(std::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             })
         })
@@ -146,11 +142,10 @@ async fn connect_and_receive(
     num_want_have: &GenericCounter<AtomicI64>,
     num_want_have_send_dont_have: &GenericCounter<AtomicI64>,
     num_unknown: &GenericCounter<AtomicI64>,
-    num_connected_found: &GenericCounter<AtomicI64>,
-    num_connected_not_found: &GenericCounter<AtomicI64>,
-    num_disconnected_found: &GenericCounter<AtomicI64>,
-    num_disconnected_not_found: &GenericCounter<AtomicI64>,
-    num_messages: &GenericCounter<AtomicI64>,
+    num_connected: &GenericCounter<AtomicI64>,
+    num_disconnected: &GenericCounter<AtomicI64>,
+    num_messages_incremental: &GenericCounter<AtomicI64>,
+    num_messages_full: &GenericCounter<AtomicI64>,
     monitor_name: &str,
     address: &str,
 ) -> Result<()> {
@@ -158,126 +153,89 @@ async fn connect_and_receive(
     let conn = TcpStream::connect(address).await?;
     info!("connected to monitor {} at {}", monitor_name, address);
 
-    let client = Connection::new(conn)?;
-    let _remote = client.remote;
-    let mut messages_in = client.messages_in;
+    let (client, mut events_in) = APIClient::new(conn).await?;
+    for _i in 0..10 {
+        let before = std::time::Instant::now();
+        client.ping().await.context("unable to ping")?;
+        info!("ping took {:?}", before.elapsed())
+    }
+
+    client.subscribe().await.context("unable to subscribe to events")?;
+
     let mut first = true;
 
-    while let Some(wl) = messages_in.recv().await {
+    while let Some(event) = events_in.recv().await {
         if first {
             first = false;
             info!("receiving messages from monitor {}...", monitor_name)
         }
-        if wl.peer_connected.is_some() && wl.peer_connected.unwrap() {
-            // Unwrap this because I hope that works...
-            if wl.connect_event_peer_found.unwrap() {
-                num_connected_found.inc();
-            } else {
-                num_connected_not_found.inc();
-            }
-            debug!(
-                "{} {:38} {:25}",
-                wl.peer,
-                match &wl.address {
-                    Some(address) => address.to_string(),
-                    None => "".to_string(),
-                },
-                if wl.connect_event_peer_found.unwrap() {
-                    "CONNECTED; FOUND"
-                } else {
-                    "CONNECTED; NOT FOUND"
+        match &event.inner {
+            EventType::ConnectionEvent(conn_event) => match conn_event.connection_event_type {
+                wantlist_client_lib::net::TCP_CONN_EVENT_CONNECTED => {
+                    num_connected.inc();
+                    debug!("{:52} {:12} {}", event.peer, "CONNECTED", conn_event.remote)
                 }
-            )
-        } else if wl.peer_disconnected.is_some() && wl.peer_disconnected.unwrap() {
-            if wl.connect_event_peer_found.unwrap() {
-                num_disconnected_found.inc();
-            } else {
-                num_disconnected_not_found.inc();
-            }
-            debug!(
-                "{} {:38} {:25}",
-                wl.peer,
-                match &wl.address {
-                    Some(address) => address.to_string(),
-                    None => "".to_string(),
-                },
-                if wl.connect_event_peer_found.unwrap() {
-                    "DISCONNECTED; FOUND"
-                } else {
-                    "DISCONNECTED; NOT FOUND"
+                wantlist_client_lib::net::TCP_CONN_EVENT_DISCONNECTED => {
+                    num_disconnected.inc();
+                    debug!(
+                        "{:52} {:12} {}",
+                        event.peer, "DISCONNECTED", conn_event.remote
+                    )
                 }
-            )
-        } else if wl.received_entries.is_some() {
-            num_messages.inc();
+                _ => {}
+            },
+            EventType::BitswapMessage(msg) => {
+                if msg.full_wantlist {
+                    num_messages_full.inc();
+                } else {
+                    num_messages_incremental.inc();
+                }
 
-            match wl.received_entries {
-                Some(entries) => {
-                    for entry in entries.iter() {
+                for entry in msg.wantlist_entries.iter() {
+                    if entry.cancel {
+                        num_cancels.inc();
+                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                        if entry.send_dont_have {
+                            num_want_block_send_dont_have.inc();
+                        } else {
+                            num_want_block.inc();
+                        }
+                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                        if entry.send_dont_have {
+                            num_want_have_send_dont_have.inc();
+                        } else {
+                            num_want_have.inc();
+                        }
+                    } else {
+                        num_unknown.inc();
+                    }
+
+                    debug!(
+                        "{:52} {:4} {:18} ({:10}) {}",
+                        event.peer,
+                        if msg.full_wantlist { "FULL" } else { "INC" },
                         if entry.cancel {
-                            num_cancels.inc();
+                            "CANCEL".to_string()
                         } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
                             if entry.send_dont_have {
-                                num_want_block_send_dont_have.inc();
+                                "WANT_BLOCK|SEND_DH".to_string()
                             } else {
-                                num_want_block.inc();
+                                "WANT_BLOCK".to_string()
                             }
                         } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
                             if entry.send_dont_have {
-                                num_want_have_send_dont_have.inc();
+                                "WANT_HAVE|SEND_DH".to_string()
                             } else {
-                                num_want_have.inc();
+                                "WANT_HAVE".to_string()
                             }
                         } else {
-                            num_unknown.inc();
-                        }
-
-                        debug!(
-                            "{} {:38} {:4} {:25} ({:10}) {}",
-                            wl.peer,
-                            match &wl.address {
-                                Some(address) => address.to_string(),
-                                None => "".to_string(),
-                            },
-                            match wl.full_want_list {
-                                Some(f) =>
-                                    if f {
-                                        "FULL"
-                                    } else {
-                                        "INC"
-                                    },
-                                None => {
-                                    "???"
-                                }
-                            },
-                            if entry.cancel {
-                                "CANCEL".to_string()
-                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                if entry.send_dont_have {
-                                    "WANT_BLOCK|SEND_DONT_HAVE".to_string()
-                                } else {
-                                    "WANT_BLOCK".to_string()
-                                }
-                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                if entry.send_dont_have {
-                                    "WANT_HAVE|SEND_DONT_HAVE".to_string()
-                                } else {
-                                    "WANT_HAVE".to_string()
-                                }
-                            } else {
-                                format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
-                            },
-                            entry.priority,
-                            entry.cid.path
-                        )
-                    }
+                            format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
+                        },
+                        entry.priority,
+                        entry.cid.path
+                    )
                 }
-                None => debug!("empty entries"),
             }
-        } else {
-            warn!(
-                "monitor {}: message has no connect/disconnect event and no entries?",
-                monitor_name
-            )
         }
     }
 

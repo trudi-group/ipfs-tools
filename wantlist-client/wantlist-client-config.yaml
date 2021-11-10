@@ -1,7 +1,5 @@
 # This is a config file for the wantlist-client tool.
 monitors:
-  - name: "DE1"
-    address: "10.0.1.5:4321"
-  - name: "DE2"
-    address: "10.0.1.2:4321"
+  - name: "local"
+    address: "127.0.0.1:8181"
 prometheus_address: "0.0.0.0:8080"

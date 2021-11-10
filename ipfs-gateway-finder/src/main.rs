@@ -19,7 +19,8 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-use wantlist_client_lib::net::Connection;
+use wantlist_client_lib::net::{APIClient, EventType};
+use ipfs_api::IpfsApi;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -195,7 +196,7 @@ async fn do_probing() -> Result<()> {
 
     // Wait for DHT propagation...
     info!("waiting some time for DHT propagation..");
-    tokio::time::delay_for(Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
 
     // Collect a list of all CIDs for easier searching.
     let mut cids = HashSet::new();
@@ -214,6 +215,7 @@ async fn do_probing() -> Result<()> {
 
     let (monitoring_ready_tx, monitoring_ready_rx) = tokio::sync::oneshot::channel();
     monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
+        .await
         .context("unable to start bitswap monitoring")?;
 
     info!("waiting for bitswap monitoring to be ready...");
@@ -239,7 +241,7 @@ async fn do_probing() -> Result<()> {
     }
 
     info!("all HTTP workers are done or timed out, waiting some more time for bitswap messages...");
-    tokio::time::delay_for(Duration::from_secs(120)).await;
+    tokio::time::sleep(Duration::from_secs(120)).await;
 
     // Remove data from IPFS.
     info!("removing data from monitoring IPFS node...");
@@ -261,49 +263,65 @@ async fn do_probing() -> Result<()> {
 }
 
 /// Starts a task to listen on the specified bitswap monitor for any of the given CIDs.
-fn monitor_bitswap(
+async fn monitor_bitswap(
     gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>,
     mut cids: HashSet<String>,
     conn: TcpStream,
     monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<()> {
-    let monitoring_client = Connection::new(conn)?;
-    let remote = monitoring_client.remote;
-    let mut messages_in = monitoring_client.messages_in;
+    let (monitoring_client,mut event_chan) = APIClient::new(conn)
+        .await
+        .context("unable to create ipfs monitoring API client")?;
+    monitoring_client.subscribe().await.context("unable to subscribe to events")?;
 
     tokio::task::spawn(async move {
         let mut sender = Some(monitoring_ready_tx);
-        info!("receiving bitswap messages from {}...", remote);
-        while let Some(wl) = messages_in.recv().await {
+        info!("receiving bitswap messages from...");
+        while let Some(event) = event_chan.recv().await {
             if let Some(sender) = sender.take() {
                 info!("got bitswap messages, connection is working");
                 sender.send(()).unwrap();
             }
-            if let Some(entries) = wl.received_entries.as_ref() {
-                for entry in entries {
-                    if cids.contains(&entry.cid.path) {
-                        debug!("received interesting CID {}", entry.cid.path);
-                        for (gw, state) in gateway_states.iter() {
-                            let mut state = state.lock().await;
-                            if state.wantlist_message.is_none() {
-                                if entry.cid.path.eq(state.cid_v1.as_ref().unwrap()) {
-                                    info!(
+
+            match event.inner {
+                EventType::BitswapMessage(msg) => {
+                    for entry in &msg.wantlist_entries {
+                        if cids.contains(&entry.cid.path) {
+                            debug!("received interesting CID {}", entry.cid.path);
+                            for (gw, state) in gateway_states.iter() {
+                                let mut state = state.lock().await;
+                                if state.wantlist_message.is_none() {
+                                    if entry.cid.path.eq(state.cid_v1.as_ref().unwrap()) {
+                                        info!(
                                         "got wantlist CID {} from peer {}, which is gateway {}",
-                                        entry.cid.path, wl.peer, gw
+                                        entry.cid.path, event.peer, gw
                                     );
-                                    state.wantlist_message = Some(wl.clone());
-                                    break;
+                                        state.wantlist_message = Some(JSONMessage{
+                                            timestamp: event.timestamp,
+                                            peer: event.peer.clone(),
+                                            address: None,
+                                            received_entries: Some(msg.wantlist_entries.clone()),
+                                            full_want_list: Some(msg.full_wantlist),
+                                            peer_connected: None,
+                                            peer_disconnected: None,
+                                            connect_event_peer_found: None
+                                        });
+                                        break;
+                                    }
                                 }
                             }
+
+                            // We remove this from our interesting CID list because we only need it once.
+                            cids.remove(&entry.cid.path);
+
+                            break;
                         }
-
-                        // We remove this from our interesting CID list because we only need it once.
-                        cids.remove(&entry.cid.path);
-
-                        break;
                     }
+
                 }
+                EventType::ConnectionEvent(_) => {}
             }
+
         }
     });
 
@@ -369,7 +387,7 @@ async fn probe_http_gateways(
             let state = state.lock().await;
             state.cid_v1.as_ref().unwrap().clone()
         };
-        let mut task_done = tx.clone();
+        let task_done = tx.clone();
         tokio::task::spawn(async move {
             let res = probe_gateway(
                 task_state.clone(),
@@ -441,7 +459,7 @@ async fn probe_gateway(
                         state.data.as_ref().unwrap().len(),
                         body.len()
                     ));
-                    tokio::time::delay_for(Duration::from_secs(3)).await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
                     continue;
                 }
 
