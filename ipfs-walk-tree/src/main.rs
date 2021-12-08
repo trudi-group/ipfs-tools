@@ -9,6 +9,7 @@ use ipfs_resolver_db::{canonicalize_cid_from_str_to_cidv1, db};
 use cursive::traits::*;
 use cursive::views::{Dialog, TextView};
 use cursive::Cursive;
+use cursive::CursiveExt;
 use cursive_async_view::{AsyncProgressState, AsyncProgressView};
 use cursive_table_view::{TableView, TableViewItem};
 use diesel::PgConnection;
@@ -18,7 +19,6 @@ use ipfs_resolver_common::{logging, Result};
 use std::sync::mpsc::TryRecvError;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use cursive::CursiveExt;
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
