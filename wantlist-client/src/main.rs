@@ -13,7 +13,9 @@ use tokio::net::TcpStream;
 use crate::config::Config;
 use ipfs_resolver_common::{logging, wantlist, Result};
 use prometheus::core::{AtomicI64, GenericCounter};
-use wantlist_client_lib::net::{APIClient,  EventType};
+use wantlist_client_lib::net::{
+    APIClient, EventType, TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE, TCP_BLOCK_PRESENCE_TYPE_HAVE,
+};
 
 mod config;
 mod prom;
@@ -68,41 +70,57 @@ async fn main() -> Result<()> {
                 let name = c.name.clone();
                 let addr = c.address;
 
-                let num_cancels = prom::ENTRIES_RECEIVED
+                let num_messages = prom::BITSWAP_MESSAGES_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str()])
+                    .unwrap();
+
+                let num_cancels = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "cancel", "false"])
                     .unwrap();
-                let num_want_block = prom::ENTRIES_RECEIVED
+                let num_want_block = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "want_block", "false"])
                     .unwrap();
-                let num_want_block_send_dont_have = prom::ENTRIES_RECEIVED
+                let num_want_block_send_dont_have = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "want_block", "true"])
                     .unwrap();
-                let num_want_have = prom::ENTRIES_RECEIVED
+                let num_want_have = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "want_have", "false"])
                     .unwrap();
-                let num_want_have_send_dont_have = prom::ENTRIES_RECEIVED
+                let num_want_have_send_dont_have = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "want_have", "true"])
                     .unwrap();
-                let num_unknown = prom::ENTRIES_RECEIVED
+                let num_unknown = prom::WANTLIST_ENTRIES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "unknown", "false"])
                     .unwrap();
 
-                let num_connected = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "true"])
+                let num_connected = prom::CONNECTION_EVENTS_CONNECTED
+                    .get_metric_with_label_values(&[name.as_str()])
                     .unwrap();
-                let num_disconnected = prom::CONNECTION_EVENTS
-                    .get_metric_with_label_values(&[name.as_str(), "false"])
+                let num_disconnected = prom::CONNECTION_EVENTS_DISCONNECTED
+                    .get_metric_with_label_values(&[name.as_str()])
                     .unwrap();
 
-                let num_messages_incremental = prom::MESSAGES_RECEIVED
+                let num_wl_messages_incremental = prom::WANTLIST_MESSAGES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "false"])
                     .unwrap();
-                let num_messages_full = prom::MESSAGES_RECEIVED
+                let num_wl_messages_full = prom::WANTLIST_MESSAGES_RECEIVED
                     .get_metric_with_label_values(&[name.as_str(), "true"])
+                    .unwrap();
+
+                let num_blocks = prom::BITSWAP_BLOCKS_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str()])
+                    .unwrap();
+
+                let num_block_presence_have = prom::BITSWAP_BLOCK_PRESENCES_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str(), "HAVE"])
+                    .unwrap();
+                let num_block_presence_dont_have = prom::BITSWAP_BLOCK_PRESENCES_RECEIVED
+                    .get_metric_with_label_values(&[name.as_str(), "DONT_HAVE"])
                     .unwrap();
 
                 loop {
                     let res = connect_and_receive(
+                        &num_messages,
                         &num_cancels,
                         &num_want_block,
                         &num_want_block_send_dont_have,
@@ -111,8 +129,11 @@ async fn main() -> Result<()> {
                         &num_unknown,
                         &num_connected,
                         &num_disconnected,
-                        &num_messages_incremental,
-                        &num_messages_full,
+                        &num_wl_messages_incremental,
+                        &num_wl_messages_full,
+                        &num_blocks,
+                        &num_block_presence_have,
+                        &num_block_presence_dont_have,
                         &name,
                         &addr,
                     )
@@ -136,16 +157,20 @@ async fn main() -> Result<()> {
 }
 
 async fn connect_and_receive(
-    num_cancels: &GenericCounter<AtomicI64>,
-    num_want_block: &GenericCounter<AtomicI64>,
-    num_want_block_send_dont_have: &GenericCounter<AtomicI64>,
-    num_want_have: &GenericCounter<AtomicI64>,
-    num_want_have_send_dont_have: &GenericCounter<AtomicI64>,
-    num_unknown: &GenericCounter<AtomicI64>,
+    num_messages: &GenericCounter<AtomicI64>,
+    num_entry_cancels: &GenericCounter<AtomicI64>,
+    num_entry_want_block: &GenericCounter<AtomicI64>,
+    num_entry_want_block_send_dont_have: &GenericCounter<AtomicI64>,
+    num_entry_want_have: &GenericCounter<AtomicI64>,
+    num_entry_want_have_send_dont_have: &GenericCounter<AtomicI64>,
+    num_entry_unknown: &GenericCounter<AtomicI64>,
     num_connected: &GenericCounter<AtomicI64>,
     num_disconnected: &GenericCounter<AtomicI64>,
-    num_messages_incremental: &GenericCounter<AtomicI64>,
-    num_messages_full: &GenericCounter<AtomicI64>,
+    num_wl_messages_incremental: &GenericCounter<AtomicI64>,
+    num_wl_messages_full: &GenericCounter<AtomicI64>,
+    num_blocks: &GenericCounter<AtomicI64>,
+    num_block_presence_have: &GenericCounter<AtomicI64>,
+    num_block_presence_dont_have: &GenericCounter<AtomicI64>,
     monitor_name: &str,
     address: &str,
 ) -> Result<()> {
@@ -160,7 +185,10 @@ async fn connect_and_receive(
         info!("ping took {:?}", before.elapsed())
     }
 
-    client.subscribe().await.context("unable to subscribe to events")?;
+    client
+        .subscribe()
+        .await
+        .context("unable to subscribe to events")?;
 
     let mut first = true;
 
@@ -185,55 +213,91 @@ async fn connect_and_receive(
                 _ => {}
             },
             EventType::BitswapMessage(msg) => {
-                if msg.full_wantlist {
-                    num_messages_full.inc();
-                } else {
-                    num_messages_incremental.inc();
-                }
+                num_messages.inc();
 
-                for entry in msg.wantlist_entries.iter() {
-                    if entry.cancel {
-                        num_cancels.inc();
-                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                        if entry.send_dont_have {
-                            num_want_block_send_dont_have.inc();
-                        } else {
-                            num_want_block.inc();
-                        }
-                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                        if entry.send_dont_have {
-                            num_want_have_send_dont_have.inc();
-                        } else {
-                            num_want_have.inc();
-                        }
+                if !msg.wantlist_entries.is_empty() {
+                    if msg.full_wantlist {
+                        num_wl_messages_full.inc();
                     } else {
-                        num_unknown.inc();
+                        num_wl_messages_incremental.inc();
                     }
 
-                    debug!(
-                        "{:52} {:4} {:18} ({:10}) {}",
-                        event.peer,
-                        if msg.full_wantlist { "FULL" } else { "INC" },
+                    for entry in msg.wantlist_entries.iter() {
                         if entry.cancel {
-                            "CANCEL".to_string()
+                            num_entry_cancels.inc();
                         } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
                             if entry.send_dont_have {
-                                "WANT_BLOCK|SEND_DH".to_string()
+                                num_entry_want_block_send_dont_have.inc();
                             } else {
-                                "WANT_BLOCK".to_string()
+                                num_entry_want_block.inc();
                             }
                         } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
                             if entry.send_dont_have {
-                                "WANT_HAVE|SEND_DH".to_string()
+                                num_entry_want_have_send_dont_have.inc();
                             } else {
-                                "WANT_HAVE".to_string()
+                                num_entry_want_have.inc();
                             }
                         } else {
-                            format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
-                        },
-                        entry.priority,
-                        entry.cid.path
-                    )
+                            num_entry_unknown.inc();
+                        }
+
+                        debug!(
+                            "{:52} {:4} {:18} ({:10}) {}",
+                            event.peer,
+                            if msg.full_wantlist { "FULL" } else { "INC" },
+                            if entry.cancel {
+                                "CANCEL".to_string()
+                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                                if entry.send_dont_have {
+                                    "WANT_BLOCK|SEND_DH".to_string()
+                                } else {
+                                    "WANT_BLOCK".to_string()
+                                }
+                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                                if entry.send_dont_have {
+                                    "WANT_HAVE|SEND_DH".to_string()
+                                } else {
+                                    "WANT_HAVE".to_string()
+                                }
+                            } else {
+                                format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
+                            },
+                            entry.priority,
+                            entry.cid.path
+                        )
+                    }
+                }
+
+                if !msg.blocks.is_empty() {
+                    for entry in msg.blocks.iter() {
+                        num_blocks.inc();
+                        debug!("{:52} {:9} {}", event.peer, "BLOCK", entry.path)
+                    }
+                }
+
+                if !msg.block_presences.is_empty() {
+                    for entry in msg.block_presences.iter() {
+                        match entry.block_presence_type {
+                            TCP_BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
+                            TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => num_block_presence_dont_have.inc(),
+                            _ => {
+                                warn!(
+                                    "monitor {} sent unknown block presence type {}: {:?}",
+                                    monitor_name, entry.block_presence_type, entry
+                                )
+                            }
+                        }
+                        debug!(
+                            "{:52} {:9} {}",
+                            event.peer,
+                            match entry.block_presence_type {
+                                TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
+                                TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => "DONT_HAVE".to_string(),
+                                _ => format!("UNKNOWN_PRESENCE_{}", entry.block_presence_type),
+                            },
+                            entry.cid.path
+                        )
+                    }
                 }
             }
         }
