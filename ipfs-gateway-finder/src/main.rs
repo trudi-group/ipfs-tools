@@ -3,6 +3,7 @@ extern crate log;
 
 use clap::{App, Arg};
 use failure::ResultExt;
+use ipfs_api::IpfsApi;
 use ipfs_api::{IpfsClient, TryFromUri};
 use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::{logging, Result};
@@ -20,7 +21,6 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use wantlist_client_lib::net::{APIClient, EventType};
-use ipfs_api::IpfsApi;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -269,10 +269,13 @@ async fn monitor_bitswap(
     conn: TcpStream,
     monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<()> {
-    let (monitoring_client,mut event_chan) = APIClient::new(conn)
+    let (monitoring_client, mut event_chan) = APIClient::new(conn)
         .await
         .context("unable to create ipfs monitoring API client")?;
-    monitoring_client.subscribe().await.context("unable to subscribe to events")?;
+    monitoring_client
+        .subscribe()
+        .await
+        .context("unable to subscribe to events")?;
 
     tokio::task::spawn(async move {
         let mut sender = Some(monitoring_ready_tx);
@@ -293,10 +296,10 @@ async fn monitor_bitswap(
                                 if state.wantlist_message.is_none() {
                                     if entry.cid.path.eq(state.cid_v1.as_ref().unwrap()) {
                                         info!(
-                                        "got wantlist CID {} from peer {}, which is gateway {}",
-                                        entry.cid.path, event.peer, gw
-                                    );
-                                        state.wantlist_message = Some(JSONMessage{
+                                            "got wantlist CID {} from peer {}, which is gateway {}",
+                                            entry.cid.path, event.peer, gw
+                                        );
+                                        state.wantlist_message = Some(JSONMessage {
                                             timestamp: event.timestamp,
                                             peer: event.peer.clone(),
                                             address: None,
@@ -304,7 +307,7 @@ async fn monitor_bitswap(
                                             full_want_list: Some(msg.full_wantlist),
                                             peer_connected: None,
                                             peer_disconnected: None,
-                                            connect_event_peer_found: None
+                                            connect_event_peer_found: None,
                                         });
                                         break;
                                     }
@@ -317,11 +320,9 @@ async fn monitor_bitswap(
                             break;
                         }
                     }
-
                 }
                 EventType::ConnectionEvent(_) => {}
             }
-
         }
     });
 
