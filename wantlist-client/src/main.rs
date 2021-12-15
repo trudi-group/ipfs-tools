@@ -197,18 +197,34 @@ async fn connect_and_receive(
             first = false;
             info!("receiving messages from monitor {}...", monitor_name)
         }
+
+        // Create a constant-width identifier for logging.
+        // This makes logging output nicely aligned :)
+        let ident = match &event.inner {
+            EventType::BitswapMessage(msg) => {
+                let mut addrs = msg
+                    .connected_addresses
+                    .iter()
+                    .map(|ma| format!("{}", ma))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                addrs.truncate(30);
+                format!("{:52} [{:30}]", event.peer, addrs,)
+            }
+            EventType::ConnectionEvent(conn_event) => {
+                format!("{:52} {:32}", event.peer, format!("{}", conn_event.remote))
+            }
+        };
+
         match &event.inner {
             EventType::ConnectionEvent(conn_event) => match conn_event.connection_event_type {
                 wantlist_client_lib::net::TCP_CONN_EVENT_CONNECTED => {
                     num_connected.inc();
-                    debug!("{:52} {:12} {}", event.peer, "CONNECTED", conn_event.remote)
+                    debug!("{} {:12}", ident, "CONNECTED")
                 }
                 wantlist_client_lib::net::TCP_CONN_EVENT_DISCONNECTED => {
                     num_disconnected.inc();
-                    debug!(
-                        "{:52} {:12} {}",
-                        event.peer, "DISCONNECTED", conn_event.remote
-                    )
+                    debug!("{} {:12}", ident, "DISCONNECTED")
                 }
                 _ => {}
             },
@@ -242,8 +258,8 @@ async fn connect_and_receive(
                         }
 
                         debug!(
-                            "{:52} {:4} {:18} ({:10}) {}",
-                            event.peer,
+                            "{} {:4} {:18} ({:10}) {}",
+                            ident,
                             if msg.full_wantlist { "FULL" } else { "INC" },
                             if entry.cancel {
                                 "CANCEL".to_string()
@@ -271,7 +287,7 @@ async fn connect_and_receive(
                 if !msg.blocks.is_empty() {
                     for entry in msg.blocks.iter() {
                         num_blocks.inc();
-                        debug!("{:52} {:9} {}", event.peer, "BLOCK", entry.path)
+                        debug!("{} {:9} {}", ident, "BLOCK", entry.path)
                     }
                 }
 
@@ -288,8 +304,8 @@ async fn connect_and_receive(
                             }
                         }
                         debug!(
-                            "{:52} {:9} {}",
-                            event.peer,
+                            "{} {:9} {}",
+                            ident,
                             match entry.block_presence_type {
                                 TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
                                 TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => "DONT_HAVE".to_string(),

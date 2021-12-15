@@ -255,6 +255,7 @@ pub struct BitswapMessage {
     pub full_wantlist: bool,
     pub blocks: Vec<JsonCID>,
     pub block_presences: Vec<BlockPresence>,
+    pub connected_addresses: Vec<Multiaddr>,
 }
 
 /// Block presence indication, as contained in a Bitswap message.
