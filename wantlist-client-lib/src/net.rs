@@ -13,7 +13,9 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task;
 
+#[derive(Debug)]
 pub struct APIClient {
+    pub remote: SocketAddr,
     requests: Sender<RequestTuple>,
 }
 
@@ -115,7 +117,13 @@ impl APIClient {
             }
         });
 
-        Ok((APIClient { requests: req_tx }, event_rx))
+        Ok((
+            APIClient {
+                remote,
+                requests: req_tx,
+            },
+            event_rx,
+        ))
     }
 
     async fn request(&self, req: RequestType) -> Result<ResponseType> {

@@ -101,7 +101,7 @@ async fn do_probing() -> Result<()> {
                 .long("gateway-list")
                 .value_name("URL")
                 .help("The URL of the JSON gateway list to use")
-                .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/master/gateways.json")
+                .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/master/src/gateways.json")
                 .takes_value(true),
         )
         .arg(
@@ -214,9 +214,10 @@ async fn do_probing() -> Result<()> {
     info!("connected.");
 
     let (monitoring_ready_tx, monitoring_ready_rx) = tokio::sync::oneshot::channel();
-    monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
-        .await
-        .context("unable to start bitswap monitoring")?;
+    let monitoring_client =
+        monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
+            .await
+            .context("unable to start bitswap monitoring")?;
 
     info!("waiting for bitswap monitoring to be ready...");
     monitoring_ready_rx.await.unwrap();
@@ -243,6 +244,15 @@ async fn do_probing() -> Result<()> {
     info!("all HTTP workers are done or timed out, waiting some more time for bitswap messages...");
     tokio::time::sleep(Duration::from_secs(120)).await;
 
+    info!("shutting down Bitswap monitoring...");
+    monitoring_client
+        .unsubscribe()
+        .await
+        .context("unable to unsubscribe -- did the connection die?")?;
+    // Dropping the client will close a bunch of channels, which ultimately leads to the monitoring
+    // to stop.
+    drop(monitoring_client);
+
     // Remove data from IPFS.
     info!("removing data from monitoring IPFS node...");
     cleanup_ipfs(&ipfs_client, gateway_states.clone())
@@ -268,10 +278,11 @@ async fn monitor_bitswap(
     mut cids: HashSet<String>,
     conn: TcpStream,
     monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
-) -> Result<()> {
+) -> Result<APIClient> {
     let (monitoring_client, mut event_chan) = APIClient::new(conn)
         .await
         .context("unable to create ipfs monitoring API client")?;
+    let remote = monitoring_client.remote;
     monitoring_client
         .subscribe()
         .await
@@ -279,7 +290,7 @@ async fn monitor_bitswap(
 
     tokio::task::spawn(async move {
         let mut sender = Some(monitoring_ready_tx);
-        info!("receiving bitswap messages from...");
+        info!("attempting to receive bitswap messages from {}...", remote);
         while let Some(event) = event_chan.recv().await {
             if let Some(sender) = sender.take() {
                 info!("got bitswap messages, connection is working");
@@ -326,7 +337,7 @@ async fn monitor_bitswap(
         }
     });
 
-    Ok(())
+    Ok(monitoring_client)
 }
 
 /// Adds the data of the given gateway states to the monitoring IPFS node via its API.
