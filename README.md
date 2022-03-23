@@ -68,11 +68,36 @@ This is the tool used for [this paper](https://arxiv.org/abs/2104.09202).
 
 ## Building
 
-You'll need the latest stable Rust.
-You'll also need `protoc`, the protocol buffer compiler, from Google, somewhere on your `PATH`.
-You need a few libraries, namely something to run [cursive](https://github.com/gyscos/cursive/wiki/Install-ncurses) (e.g. `libncursesw5-dev` on Ubuntu) and some SSL library,
-probably `libssl-dev`.
-Then just:
+### Dependencies
+
+You need a few dependencies to build, and also to run, I guess.
+On Ubuntu/Debian, this should probably do it:
+
+```
+apt-get update && apt-get install \
+  libncursesw5-dev \
+  libssl-dev \
+  protobuf-compiler
+```
+
+There are alternative backends to run [cursive](https://github.com/gyscos/cursive/wiki/Install-ncurses), it should be possible to use those instead of `ncurses`.
+
+### Docker
+
+There is a multi-stage build setup implemented with Docker.
+The [builder stage](./Dockerfile.builder) compiles the binaries and caches dependencies, for faster incremental builds.
+This should produce an image named `ipfs-tools-builder`, which is then used in the runner stages.
+The runner stages copy out compiled artifacts from `ipfs-tools-builder` and set up a minimal runtime environment.
+There is a [build-docker-images.sh](./build-docker-images.sh) script that builds all these images.
+There is also a [build-in-docker.sh](./build-in-docker.sh) script that builds the builder and copies out the artifacts to the `out/` directory of the project.
+
+Docker builds against the current stable Rust on Debian Bullseye.
+This gives us an older-ish libc, which improves compatibility with older-ish systems (Ubuntu LTS, for example) at no loss of functionality.
+
+### Manually
+
+You'll need the latest stable Rust and a bunch of system-level dependencies, see above.
+Then execute, in the topmost directory:
 
 ```
 cargo build --release

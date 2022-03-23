@@ -2,4 +2,4 @@
 monitors:
   - name: "local"
     address: "127.0.0.1:8181"
-prometheus_address: "0.0.0.0:8080"
+prometheus_address: "0.0.0.0:8088"
