@@ -69,7 +69,7 @@ async fn do_probing() -> Result<()> {
                 .long("monitor-logging-addr")
                 .value_name("ADDRESS")
                 .help("The address of the bitswap monitor to connect to")
-                .default_value("localhost:4321")
+                .default_value("localhost:8181")
                 .takes_value(true),
         )
         .arg(
@@ -77,7 +77,7 @@ async fn do_probing() -> Result<()> {
                 .long("monitor-api-addr")
                 .value_name("ADDRESS")
                 .help("The address of the HTTP IPFS API of the monitor")
-                .default_value("localhost:5003")
+                .default_value("localhost:5001")
                 .takes_value(true),
         )
         .arg(
