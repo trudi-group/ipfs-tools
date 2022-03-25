@@ -163,7 +163,10 @@ async fn do_probing() -> Result<()> {
 
     let gateway_list_resp = client.get(gateway_list_url).send()?;
     let gateway_list: Vec<String> = gateway_list_resp.json()?;
-    info!("got {} gateways: {:?}", gateway_list.len(), gateway_list);
+    info!("got {} gateways", gateway_list.len());
+    debug!("got gateways: {:?}", gateway_list);
+
+    // TODO check for duplicates? We assume there are none in our algorithms...
 
     // Initialize our states.
     let gateway_states: Arc<HashMap<String, Mutex<ProbingState>>> = Arc::new(
@@ -187,12 +190,13 @@ async fn do_probing() -> Result<()> {
     }
 
     // Add to IPFS.
-    info!("adding data to IPFS...");
+    debug!("adding data to IPFS...");
     add_data_to_ipfs(&ipfs_client, gateway_states.clone())
         .await
         .context(
             "unable to add (all?) data to monitoring IPFS node. This might need manual cleanup",
         )?;
+    info!("added data to IPFS");
 
     // Wait for DHT propagation...
     info!("waiting some time for DHT propagation..");
@@ -206,12 +210,12 @@ async fn do_probing() -> Result<()> {
     }
 
     // Start listening for bitswap messages
-    info!(
+    debug!(
         "connecting to bitswap monitoring node at {}...",
         bitswap_monitor_address
     );
     let conn = TcpStream::connect(bitswap_monitor_address).await?;
-    info!("connected.");
+    info!("connected to bitswap monitor");
 
     let (monitoring_ready_tx, monitoring_ready_rx) = tokio::sync::oneshot::channel();
     let monitoring_client =
@@ -219,8 +223,9 @@ async fn do_probing() -> Result<()> {
             .await
             .context("unable to start bitswap monitoring")?;
 
-    info!("waiting for bitswap monitoring to be ready...");
+    debug!("waiting for bitswap monitoring to be ready...");
     monitoring_ready_rx.await.unwrap();
+    info!("bitswap monitoring is ready");
 
     // Send one CID to each gateway
     info!("probing gateways...");
@@ -279,6 +284,16 @@ async fn monitor_bitswap(
     conn: TcpStream,
     monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<APIClient> {
+    // Build an index that maps from CID to the gateway the CID was sent to.
+    let cid_to_gateway = {
+        let mut m = HashMap::new();
+        for (gw, state) in gateway_states.iter() {
+            let state = state.lock().await;
+            m.insert(state.cid_v1.clone().unwrap(), gw.clone());
+        }
+        m
+    };
+
     let (monitoring_client, mut event_chan) = APIClient::new(conn)
         .await
         .context("unable to create ipfs monitoring API client")?;
@@ -290,10 +305,10 @@ async fn monitor_bitswap(
 
     tokio::task::spawn(async move {
         let mut sender = Some(monitoring_ready_tx);
-        info!("attempting to receive bitswap messages from {}...", remote);
+        debug!("attempting to receive bitswap messages from {}...", remote);
         while let Some(event) = event_chan.recv().await {
             if let Some(sender) = sender.take() {
-                info!("got bitswap messages, connection is working");
+                debug!("got bitswap messages, connection is working");
                 sender.send(()).unwrap();
             }
 
@@ -302,27 +317,39 @@ async fn monitor_bitswap(
                     for entry in &msg.wantlist_entries {
                         if cids.contains(&entry.cid.path) {
                             debug!("received interesting CID {}", entry.cid.path);
-                            for (gw, state) in gateway_states.iter() {
+                            let gw_name = cid_to_gateway
+                                .get(&entry.cid.path)
+                                .expect("missing CID in state list");
+                            let state = gateway_states
+                                .get(gw_name)
+                                .expect("missing gateway in state list");
+
+                            info!(
+                                "got wantlist CID {} from peer {}, which is gateway {}",
+                                entry.cid.path, event.peer, gw_name
+                            );
+
+                            {
                                 let mut state = state.lock().await;
-                                if state.wantlist_message.is_none() {
-                                    if entry.cid.path.eq(state.cid_v1.as_ref().unwrap()) {
-                                        info!(
-                                            "got wantlist CID {} from peer {}, which is gateway {}",
-                                            entry.cid.path, event.peer, gw
-                                        );
-                                        state.wantlist_message = Some(JSONMessage {
-                                            timestamp: event.timestamp,
-                                            peer: event.peer.clone(),
-                                            address: None,
-                                            received_entries: Some(msg.wantlist_entries.clone()),
-                                            full_want_list: Some(msg.full_wantlist),
-                                            peer_connected: None,
-                                            peer_disconnected: None,
-                                            connect_event_peer_found: None,
-                                        });
-                                        break;
-                                    }
-                                }
+                                assert!(
+                                    entry.cid.path.eq(state.cid_v1.as_ref().unwrap()),
+                                    "CID mismatch in CID-to-gw map"
+                                );
+                                assert!(
+                                    state.wantlist_message.is_none(),
+                                    "attempting to add multiple wantlist messages for one CID",
+                                );
+
+                                state.wantlist_message = Some(JSONMessage {
+                                    timestamp: event.timestamp,
+                                    peer: event.peer.clone(),
+                                    address: None,
+                                    received_entries: Some(msg.wantlist_entries.clone()),
+                                    full_want_list: Some(msg.full_wantlist),
+                                    peer_connected: None,
+                                    peer_disconnected: None,
+                                    connect_event_peer_found: None,
+                                });
                             }
 
                             // We remove this from our interesting CID list because we only need it once.
@@ -335,6 +362,8 @@ async fn monitor_bitswap(
                 EventType::ConnectionEvent(_) => {}
             }
         }
+
+        info!("bitswap monitoring disconnected");
     });
 
     Ok(monitoring_client)
@@ -358,7 +387,7 @@ async fn add_data_to_ipfs(
         let c = cid::Cid::from_str(&add_resp.hash)?;
         let cid_v1 = cid::Cid::new_v1(c.codec(), c.hash().to_owned());
         let cid_v1_encoded = multibase::encode(multibase::Base::Base32Lower, cid_v1.to_bytes());
-        info!("added CID {} = {}", add_resp.hash, cid_v1_encoded);
+        debug!("added CID {} = {}", add_resp.hash, cid_v1_encoded);
 
         state.cid_v0 = Some(add_resp.hash.clone());
         state.cid_v1 = Some(cid_v1_encoded);
@@ -375,11 +404,10 @@ async fn cleanup_ipfs(
     for (_, state) in gateway_states.iter() {
         let state = state.lock().await;
         let cid = state.cid_v0.as_ref().unwrap();
+
         debug!("cleaning up CID {}", cid);
-
         client.pin_rm(cid.as_str(), true).await?;
-
-        info!("cleaned up CID {}", cid);
+        debug!("cleaned up CID {}", cid);
     }
 
     Ok(())
@@ -438,6 +466,10 @@ async fn probe_gateway(
     let mut url = Url::parse(gateway_url.replace(":hash", &cid).as_str())?;
     url.set_fragment(Some("x-ipfs-companion-no-redirect"));
     let mut last_err = None;
+    // We use this to keep track of additional backoff timers.
+    // Specifically, if we get a response, but the wrong one, we assume something like an HTTP
+    // "gateway timeout" page, so we wait a while to try again.
+    let mut sleep_before = None;
 
     {
         let mut state = gateway_state.get(gateway_url).unwrap().lock().await;
@@ -445,6 +477,11 @@ async fn probe_gateway(
     }
 
     for i in 0..num_tries {
+        // Consume any additional backoff timers.
+        if let Some(duration) = sleep_before.take() {
+            tokio::time::sleep(duration).await;
+        }
+
         debug!("requesting {}, try  {}...", url, i + 1);
         let resp = reqwest::Client::builder()
             .timeout(timeout.clone())
@@ -465,13 +502,14 @@ async fn probe_gateway(
                 state.http_request_remote = remote;
 
                 if !body.eq(state.data.as_ref().unwrap()) {
-                    debug!("data mismatch for gateway {}, got {} bytes, expected {} (and maybe different bytes)", gateway_url, body.len(), state.data.as_ref().unwrap().len());
-                    last_err = Some(format!(
+                    let err_msg = format!(
                         "data mismatch, expected {} bytes, got {} bytes (and maybe different ones)",
                         state.data.as_ref().unwrap().len(),
                         body.len()
-                    ));
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    );
+                    debug!("{}", err_msg);
+                    last_err = Some(err_msg);
+                    sleep_before = Some(Duration::from_secs(5));
                     continue;
                 }
 
@@ -480,7 +518,7 @@ async fn probe_gateway(
                 return Ok(());
             }
             Err(err) => {
-                info!("error requesting {}, try {}: {:?}", gateway_url, i + 1, err);
+                debug!("error requesting {}, try {}: {:?}", gateway_url, i + 1, err);
                 last_err = Some(format!("{}", err))
             }
         }
