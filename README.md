@@ -100,7 +100,7 @@ You'll need the latest stable Rust and a bunch of system-level dependencies, see
 Then execute, in the topmost directory:
 
 ```
-cargo build --release
+cargo build --release --locked
 ```
 
 This will take a while for the first build.
@@ -108,6 +108,11 @@ Also, this will build all sub-projects, which then end up in the `target/` direc
 
 ## Configuration
 
-Most of the packages are configured via environment variables/`.env` files.
+Most of the packages are configured via environment variables/`.env` files or CLI parameters.
 The packages sometimes contain README files that detail their configuration, and an example, mostly complete `.env` file is given in
 [.env](.env).
+
+## Running
+
+You can control the level of logging using the `RUST_LOG` environment variable.
+Running with `RUST_BACKTRACE=1` is also a good idea, makes it easier for me to debug :)

@@ -31,4 +31,4 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build our project.
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --locked
