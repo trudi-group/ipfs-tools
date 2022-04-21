@@ -165,6 +165,7 @@ dependencies = [
  "futures 0.3.21",
  "futures-util",
  "ipfs-resolver-common",
+ "ipfs_monitoring_plugin_client",
  "lazy_static",
  "log",
  "multiaddr",
@@ -174,7 +175,6 @@ dependencies = [
  "serde_yaml",
  "tokio 1.13.0",
  "waitgroup",
- "wantlist-client-lib",
 ]
 
 [[package]]
@@ -187,6 +187,7 @@ dependencies = [
  "flexi_logger 0.19.6",
  "futures-util",
  "ipfs-resolver-common",
+ "ipfs_monitoring_plugin_client",
  "lazy_static",
  "log",
  "prometheus",
@@ -194,7 +195,6 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tokio 1.13.0",
- "wantlist-client-lib",
 ]
 
 [[package]]
@@ -1635,6 +1635,7 @@ dependencies = [
  "http 0.2.5",
  "ipfs-api",
  "ipfs-resolver-common",
+ "ipfs_monitoring_plugin_client",
  "log",
  "multibase 0.8.0",
  "parity-multiaddr 0.9.7",
@@ -1643,7 +1644,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio 1.13.0",
- "wantlist-client-lib",
 ]
 
 [[package]]
@@ -1755,6 +1755,27 @@ dependencies = [
  "ipfs-resolver-common",
  "ipfs-resolver-db",
  "log",
+]
+
+[[package]]
+name = "ipfs_monitoring_plugin_client"
+version = "0.3.0"
+dependencies = [
+ "bytes 1.1.0",
+ "chrono",
+ "failure",
+ "flate2",
+ "futures 0.3.21",
+ "futures-util",
+ "ipfs-resolver-common",
+ "log",
+ "multiaddr",
+ "reqwest 0.11.10",
+ "serde",
+ "serde_json",
+ "tokio 1.13.0",
+ "tokio-serde",
+ "tokio-util 0.6.9",
 ]
 
 [[package]]
@@ -3788,27 +3809,6 @@ checksum = "1ce8a968cb1cd110d136ff8b819a556d6fb6d919363c61534f6860c7eb172ba0"
 dependencies = [
  "log",
  "try-lock",
-]
-
-[[package]]
-name = "wantlist-client-lib"
-version = "0.3.0"
-dependencies = [
- "bytes 1.1.0",
- "chrono",
- "failure",
- "flate2",
- "futures 0.3.21",
- "futures-util",
- "ipfs-resolver-common",
- "log",
- "multiaddr",
- "reqwest 0.11.10",
- "serde",
- "serde_json",
- "tokio 1.13.0",
- "tokio-serde",
- "tokio-util 0.6.9",
 ]
 
 [[package]]

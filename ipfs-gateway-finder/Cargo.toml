@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 ipfs-resolver-common = {path = "../common"}
-wantlist-client-lib = {path = "../bitswap-monitoring-client-lib" }
+ipfs_monitoring_plugin_client = {path = "../ipfs-monitoring-plugin-client" }
 failure = "0.1.7"
 log = "0.4.8"
 flexi_logger = "0.15.2"

@@ -1,5 +1,5 @@
 [package]
-name = "wantlist-client-lib"
+name = "ipfs_monitoring_plugin_client"
 version = "0.3.0"
 authors = ["Leo Balduf <leobalduf@gmail.com>"]
 edition = "2018"

@@ -104,8 +104,8 @@ pub struct BlockPresence {
 }
 
 /// Block presence type constants for TCP messages.
-pub const TCP_BLOCK_PRESENCE_TYPE_HAVE: i32 = 0;
-pub const TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE: i32 = 1;
+pub const BLOCK_PRESENCE_TYPE_HAVE: i32 = 0;
+pub const BLOCK_PRESENCE_TYPE_DONT_HAVE: i32 = 1;
 
 /// A connection event, as reported by IPFS.
 /// See the `TCP_CONN_EVENT_` constants for the types of connection events.
@@ -116,8 +116,8 @@ pub struct ConnectionEvent {
 }
 
 /// Connection event type constants for TCP messages.
-pub const TCP_CONN_EVENT_CONNECTED: i32 = 0;
-pub const TCP_CONN_EVENT_DISCONNECTED: i32 = 1;
+pub const CONN_EVENT_CONNECTED: i32 = 0;
+pub const CONN_EVENT_DISCONNECTED: i32 = 1;
 
 /// Errors during the handshake procedure.
 #[derive(Debug, Fail)]

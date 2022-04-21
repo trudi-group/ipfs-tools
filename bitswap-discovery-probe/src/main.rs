@@ -16,10 +16,10 @@ use tokio::net::TcpStream;
 use tokio::select;
 
 use crate::config::Config;
+use ipfs_monitoring_plugin_client::http::{APIClient, BroadcastBitswapWantCancelEntry};
+use ipfs_monitoring_plugin_client::tcp;
+use ipfs_monitoring_plugin_client::tcp::{EventType, MonitoringClient, PushedEvent};
 use ipfs_resolver_common::{logging, Result};
-use wantlist_client_lib::http::{APIClient, BroadcastBitswapWantCancelEntry};
-use wantlist_client_lib::net;
-use wantlist_client_lib::net::{EventType, MonitoringClient, PushedEvent};
 
 mod config;
 
@@ -215,14 +215,14 @@ async fn main() -> Result<()> {
                         }
                         BroadcastResponseType::BlockPresence { presence_type } => {
                             match presence_type {
-                                net::TCP_BLOCK_PRESENCE_TYPE_HAVE => {
+                                tcp::BLOCK_PRESENCE_TYPE_HAVE => {
                                     if cid_entry.have_received_ts.is_some() {
                                         warn!("double HAVE response by peer {} to WANT {} on monitor {}; ignoring; previous state: {:?}",res.peer,res.cid,name,cid_entry);
                                         return
                                     }
                                     cid_entry.have_received_ts = Some(res.timestamp)
                                 },
-                                net::TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => {
+                                tcp::BLOCK_PRESENCE_TYPE_DONT_HAVE => {
                                     if cid_entry.dont_have_received_ts.is_some() {
                                         warn!("double DONT_HAVE response by peer {} to WANT {} on monitor {}; ignoring; previous state: {:?}",res.peer,res.cid,name,cid_entry);
                                         return
@@ -611,8 +611,8 @@ impl Probe {
                                         "{} {:9} {}",
                                         ident,
                                         match entry.block_presence_type {
-                                            net::TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
-                                            net::TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE =>
+                                            tcp::BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
+                                            tcp::BLOCK_PRESENCE_TYPE_DONT_HAVE =>
                                                 "DONT_HAVE".to_string(),
                                             _ => format!(
                                                 "UNKNOWN_PRESENCE_{}",

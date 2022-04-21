@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 ipfs-resolver-common = { path = "../common" }
-wantlist-client-lib = { path = "../bitswap-monitoring-client-lib" }
+ipfs_monitoring_plugin_client = { path = "../ipfs-monitoring-plugin-client" }
 tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread","time", "macros"] }
 log = "0.4.14"
 flexi_logger = "0.19.6"

@@ -12,11 +12,11 @@ use std::env;
 use tokio::net::TcpStream;
 
 use crate::config::Config;
+use ipfs_monitoring_plugin_client::tcp::{
+    EventType, MonitoringClient, BLOCK_PRESENCE_TYPE_DONT_HAVE, BLOCK_PRESENCE_TYPE_HAVE,
+};
 use ipfs_resolver_common::{logging, wantlist, Result};
 use prometheus::core::{AtomicI64, GenericCounter};
-use wantlist_client_lib::net::{
-    EventType, MonitoringClient, TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE, TCP_BLOCK_PRESENCE_TYPE_HAVE,
-};
 
 mod config;
 mod prom;
@@ -216,11 +216,11 @@ async fn connect_and_receive(
                 match &event.inner {
                     EventType::ConnectionEvent(conn_event) => {
                         match conn_event.connection_event_type {
-                            wantlist_client_lib::net::TCP_CONN_EVENT_CONNECTED => {
+                            ipfs_monitoring_plugin_client::tcp::CONN_EVENT_CONNECTED => {
                                 num_connected.inc();
                                 debug!("{} {:12}", ident, "CONNECTED")
                             }
-                            wantlist_client_lib::net::TCP_CONN_EVENT_DISCONNECTED => {
+                            ipfs_monitoring_plugin_client::tcp::CONN_EVENT_DISCONNECTED => {
                                 num_disconnected.inc();
                                 debug!("{} {:12}", ident, "DISCONNECTED")
                             }
@@ -293,8 +293,8 @@ async fn connect_and_receive(
                         if !msg.block_presences.is_empty() {
                             for entry in msg.block_presences.iter() {
                                 match entry.block_presence_type {
-                                    TCP_BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
-                                    TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => {
+                                    BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
+                                    BLOCK_PRESENCE_TYPE_DONT_HAVE => {
                                         num_block_presence_dont_have.inc()
                                     }
                                     _ => {
@@ -308,9 +308,8 @@ async fn connect_and_receive(
                                     "{} {:9} {}",
                                     ident,
                                     match entry.block_presence_type {
-                                        TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
-                                        TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE =>
-                                            "DONT_HAVE".to_string(),
+                                        BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
+                                        BLOCK_PRESENCE_TYPE_DONT_HAVE => "DONT_HAVE".to_string(),
                                         _ => format!(
                                             "UNKNOWN_PRESENCE_{}",
                                             entry.block_presence_type

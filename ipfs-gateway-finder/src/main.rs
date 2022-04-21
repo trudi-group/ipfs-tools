@@ -6,6 +6,7 @@ use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
 use ipfs_api::IpfsApi;
 use ipfs_api::{IpfsClient, TryFromUri};
+use ipfs_monitoring_plugin_client::tcp::{EventType, MonitoringClient, PushedEvent};
 use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::{logging, Result};
 use rand::{Rng, SeedableRng};
@@ -22,7 +23,6 @@ use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-use wantlist_client_lib::net::{EventType, MonitoringClient, PushedEvent};
 
 #[tokio::main]
 async fn main() -> Result<()> {
