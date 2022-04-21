@@ -1,13 +1,15 @@
-# wantlist-client
+# bitswap-monitoring-client
 
-This package implements a client for the IPFS monitoring TCP server.
+This package implements a client for the IPFS Bitswap monitoring TCP server.
 It reads and processes messages from multiple monitors and outputs various metrics via prometheus.
+
+See also [the plugin](https://github.com/scriptkitty/ipfs-metric-exporter).
 
 ## Configuration
 
 Configuration is done via a YAML configuration file.
 The location of the configuration file can be specified with the `--config` parameter, it defaults to `config.yaml`.
-This is an example config file, see also the [file](./wantlist-client-config.yaml):
+This is an example config file, see also the [file](./config.yaml) and the [implementation](./src/config.rs):
 
 ```yaml
 # This is a config file for the wantlist-client tool.

@@ -1,4 +1,4 @@
-# This is a config file for the wantlist-client tool.
+# This is a config file for the bitswap-monitoring-client tool.
 monitors:
   - name: "local"
     address: "127.0.0.1:8181"

@@ -8,10 +8,11 @@ edition = "2018"
 
 [dependencies]
 ipfs-resolver-common = {path = "../common"}
-wantlist-client-lib = {path = "../wantlist-client-lib"}
+wantlist-client-lib = {path = "../bitswap-monitoring-client-lib" }
 failure = "0.1.7"
 log = "0.4.8"
 flexi_logger = "0.15.2"
+futures-util = "0.3.17"
 reqwest = { version = "0.11", features = ["blocking","json"] }
 multibase = "0.8.0"
 chrono = "0.4.11"

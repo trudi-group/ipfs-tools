@@ -7,6 +7,7 @@ extern crate prometheus;
 
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
+use futures_util::StreamExt;
 use std::env;
 use tokio::net::TcpStream;
 
@@ -14,7 +15,7 @@ use crate::config::Config;
 use ipfs_resolver_common::{logging, wantlist, Result};
 use prometheus::core::{AtomicI64, GenericCounter};
 use wantlist_client_lib::net::{
-    APIClient, EventType, TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE, TCP_BLOCK_PRESENCE_TYPE_HAVE,
+    EventType, MonitoringClient, TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE, TCP_BLOCK_PRESENCE_TYPE_HAVE,
 };
 
 mod config;
@@ -178,141 +179,147 @@ async fn connect_and_receive(
     let conn = TcpStream::connect(address).await?;
     info!("connected to monitor {} at {}", monitor_name, address);
 
-    let (client, mut events_in) = APIClient::new(conn).await?;
-    for _i in 0..10 {
-        let before = std::time::Instant::now();
-        client.ping().await.context("unable to ping")?;
-        info!("ping took {:?}", before.elapsed())
-    }
-
-    client
-        .subscribe()
-        .await
-        .context("unable to subscribe to events")?;
+    let mut client = MonitoringClient::new(conn).await?;
 
     let mut first = true;
 
-    while let Some(event) = events_in.recv().await {
-        if first {
-            first = false;
-            info!("receiving messages from monitor {}...", monitor_name)
-        }
-
-        // Create a constant-width identifier for logging.
-        // This makes logging output nicely aligned :)
-        let ident = match &event.inner {
-            EventType::BitswapMessage(msg) => {
-                let mut addrs = msg
-                    .connected_addresses
-                    .iter()
-                    .map(|ma| format!("{}", ma))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                addrs.truncate(30);
-                format!("{:52} [{:30}]", event.peer, addrs,)
+    while let Some(event) = client.next().await {
+        match event {
+            Err(err) => {
+                error!("unable to receive events: {}", err);
+                break;
             }
-            EventType::ConnectionEvent(conn_event) => {
-                format!("{:52} {:32}", event.peer, format!("{}", conn_event.remote))
-            }
-        };
-
-        match &event.inner {
-            EventType::ConnectionEvent(conn_event) => match conn_event.connection_event_type {
-                wantlist_client_lib::net::TCP_CONN_EVENT_CONNECTED => {
-                    num_connected.inc();
-                    debug!("{} {:12}", ident, "CONNECTED")
+            Ok(event) => {
+                if first {
+                    first = false;
+                    info!("receiving messages from monitor {}...", monitor_name)
                 }
-                wantlist_client_lib::net::TCP_CONN_EVENT_DISCONNECTED => {
-                    num_disconnected.inc();
-                    debug!("{} {:12}", ident, "DISCONNECTED")
-                }
-                _ => {}
-            },
-            EventType::BitswapMessage(msg) => {
-                num_messages.inc();
 
-                if !msg.wantlist_entries.is_empty() {
-                    if msg.full_wantlist {
-                        num_wl_messages_full.inc();
-                    } else {
-                        num_wl_messages_incremental.inc();
+                // Create a constant-width identifier for logging.
+                // This makes logging output nicely aligned :)
+                let ident = match &event.inner {
+                    EventType::BitswapMessage(msg) => {
+                        let mut addrs = msg
+                            .connected_addresses
+                            .iter()
+                            .map(|ma| format!("{}", ma))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        addrs.truncate(30);
+                        format!("{:52} [{:30}]", event.peer, addrs,)
                     }
+                    EventType::ConnectionEvent(conn_event) => {
+                        format!("{:52} {:32}", event.peer, format!("{}", conn_event.remote))
+                    }
+                };
 
-                    for entry in msg.wantlist_entries.iter() {
-                        if entry.cancel {
-                            num_entry_cancels.inc();
-                        } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                            if entry.send_dont_have {
-                                num_entry_want_block_send_dont_have.inc();
-                            } else {
-                                num_entry_want_block.inc();
+                match &event.inner {
+                    EventType::ConnectionEvent(conn_event) => {
+                        match conn_event.connection_event_type {
+                            wantlist_client_lib::net::TCP_CONN_EVENT_CONNECTED => {
+                                num_connected.inc();
+                                debug!("{} {:12}", ident, "CONNECTED")
                             }
-                        } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                            if entry.send_dont_have {
-                                num_entry_want_have_send_dont_have.inc();
-                            } else {
-                                num_entry_want_have.inc();
+                            wantlist_client_lib::net::TCP_CONN_EVENT_DISCONNECTED => {
+                                num_disconnected.inc();
+                                debug!("{} {:12}", ident, "DISCONNECTED")
                             }
-                        } else {
-                            num_entry_unknown.inc();
+                            _ => {}
                         }
+                    }
+                    EventType::BitswapMessage(msg) => {
+                        num_messages.inc();
 
-                        debug!(
-                            "{} {:4} {:18} ({:10}) {}",
-                            ident,
-                            if msg.full_wantlist { "FULL" } else { "INC" },
-                            if entry.cancel {
-                                "CANCEL".to_string()
-                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                if entry.send_dont_have {
-                                    "WANT_BLOCK|SEND_DH".to_string()
-                                } else {
-                                    "WANT_BLOCK".to_string()
-                                }
-                            } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                if entry.send_dont_have {
-                                    "WANT_HAVE|SEND_DH".to_string()
-                                } else {
-                                    "WANT_HAVE".to_string()
-                                }
+                        if !msg.wantlist_entries.is_empty() {
+                            if msg.full_wantlist {
+                                num_wl_messages_full.inc();
                             } else {
-                                format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
-                            },
-                            entry.priority,
-                            entry.cid.path
-                        )
-                    }
-                }
+                                num_wl_messages_incremental.inc();
+                            }
 
-                if !msg.blocks.is_empty() {
-                    for entry in msg.blocks.iter() {
-                        num_blocks.inc();
-                        debug!("{} {:9} {}", ident, "BLOCK", entry.path)
-                    }
-                }
+                            for entry in msg.wantlist_entries.iter() {
+                                if entry.cancel {
+                                    num_entry_cancels.inc();
+                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                                    if entry.send_dont_have {
+                                        num_entry_want_block_send_dont_have.inc();
+                                    } else {
+                                        num_entry_want_block.inc();
+                                    }
+                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                                    if entry.send_dont_have {
+                                        num_entry_want_have_send_dont_have.inc();
+                                    } else {
+                                        num_entry_want_have.inc();
+                                    }
+                                } else {
+                                    num_entry_unknown.inc();
+                                }
 
-                if !msg.block_presences.is_empty() {
-                    for entry in msg.block_presences.iter() {
-                        match entry.block_presence_type {
-                            TCP_BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
-                            TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => num_block_presence_dont_have.inc(),
-                            _ => {
-                                warn!(
-                                    "monitor {} sent unknown block presence type {}: {:?}",
-                                    monitor_name, entry.block_presence_type, entry
+                                debug!(
+                                    "{} {:4} {:18} ({:10}) {}",
+                                    ident,
+                                    if msg.full_wantlist { "FULL" } else { "INC" },
+                                    if entry.cancel {
+                                        "CANCEL".to_string()
+                                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
+                                        if entry.send_dont_have {
+                                            "WANT_BLOCK|SEND_DH".to_string()
+                                        } else {
+                                            "WANT_BLOCK".to_string()
+                                        }
+                                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
+                                        if entry.send_dont_have {
+                                            "WANT_HAVE|SEND_DH".to_string()
+                                        } else {
+                                            "WANT_HAVE".to_string()
+                                        }
+                                    } else {
+                                        format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
+                                    },
+                                    entry.priority,
+                                    entry.cid.path
                                 )
                             }
                         }
-                        debug!(
-                            "{} {:9} {}",
-                            ident,
-                            match entry.block_presence_type {
-                                TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
-                                TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => "DONT_HAVE".to_string(),
-                                _ => format!("UNKNOWN_PRESENCE_{}", entry.block_presence_type),
-                            },
-                            entry.cid.path
-                        )
+
+                        if !msg.blocks.is_empty() {
+                            for entry in msg.blocks.iter() {
+                                num_blocks.inc();
+                                debug!("{} {:9} {}", ident, "BLOCK", entry.path)
+                            }
+                        }
+
+                        if !msg.block_presences.is_empty() {
+                            for entry in msg.block_presences.iter() {
+                                match entry.block_presence_type {
+                                    TCP_BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
+                                    TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE => {
+                                        num_block_presence_dont_have.inc()
+                                    }
+                                    _ => {
+                                        warn!(
+                                            "monitor {} sent unknown block presence type {}: {:?}",
+                                            monitor_name, entry.block_presence_type, entry
+                                        )
+                                    }
+                                }
+                                debug!(
+                                    "{} {:9} {}",
+                                    ident,
+                                    match entry.block_presence_type {
+                                        TCP_BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
+                                        TCP_BLOCK_PRESENCE_TYPE_DONT_HAVE =>
+                                            "DONT_HAVE".to_string(),
+                                        _ => format!(
+                                            "UNKNOWN_PRESENCE_{}",
+                                            entry.block_presence_type
+                                        ),
+                                    },
+                                    entry.cid.path
+                                )
+                            }
+                        }
                     }
                 }
             }

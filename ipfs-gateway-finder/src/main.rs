@@ -2,7 +2,8 @@
 extern crate log;
 
 use clap::{App, Arg};
-use failure::ResultExt;
+use failure::{err_msg, ResultExt};
+use futures_util::StreamExt;
 use ipfs_api::IpfsApi;
 use ipfs_api::{IpfsClient, TryFromUri};
 use ipfs_resolver_common::wantlist::JSONMessage;
@@ -18,9 +19,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-use wantlist_client_lib::net::{APIClient, EventType};
+use wantlist_client_lib::net::{EventType, MonitoringClient, PushedEvent};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -219,7 +221,7 @@ async fn do_probing() -> Result<()> {
 
     let (monitoring_ready_tx, monitoring_ready_rx) = tokio::sync::oneshot::channel();
     let monitoring_client =
-        monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
+        Monitor::monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
             .await
             .context("unable to start bitswap monitoring")?;
 
@@ -251,12 +253,9 @@ async fn do_probing() -> Result<()> {
 
     info!("shutting down Bitswap monitoring...");
     monitoring_client
-        .unsubscribe()
+        .close()
         .await
-        .context("unable to unsubscribe -- did the connection die?")?;
-    // Dropping the client will close a bunch of channels, which ultimately leads to the monitoring
-    // to stop.
-    drop(monitoring_client);
+        .context("unable to cleanly shutdown Bitswap monitoring -- did the connection die?")?;
 
     // Remove data from IPFS.
     info!("removing data from monitoring IPFS node...");
@@ -277,96 +276,144 @@ async fn do_probing() -> Result<()> {
     Ok(())
 }
 
-/// Starts a task to listen on the specified bitswap monitor for any of the given CIDs.
-async fn monitor_bitswap(
-    gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>,
-    mut cids: HashSet<String>,
-    conn: TcpStream,
-    monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
-) -> Result<APIClient> {
-    // Build an index that maps from CID to the gateway the CID was sent to.
-    let cid_to_gateway = {
-        let mut m = HashMap::new();
-        for (gw, state) in gateway_states.iter() {
-            let state = state.lock().await;
-            m.insert(state.cid_v1.clone().unwrap(), gw.clone());
-        }
-        m
-    };
+#[derive(Debug)]
+struct Monitor {
+    shutdown_chan: tokio::sync::oneshot::Sender<()>,
+}
 
-    let (monitoring_client, mut event_chan) = APIClient::new(conn)
-        .await
-        .context("unable to create ipfs monitoring API client")?;
-    let remote = monitoring_client.remote;
-    monitoring_client
-        .subscribe()
-        .await
-        .context("unable to subscribe to events")?;
-
-    tokio::task::spawn(async move {
-        let mut sender = Some(monitoring_ready_tx);
-        debug!("attempting to receive bitswap messages from {}...", remote);
-        while let Some(event) = event_chan.recv().await {
-            if let Some(sender) = sender.take() {
-                debug!("got bitswap messages, connection is working");
-                sender.send(()).unwrap();
+impl Monitor {
+    /// Starts a task to listen on the specified bitswap monitor for any of the given CIDs.
+    async fn monitor_bitswap(
+        gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>,
+        mut cids: HashSet<String>,
+        conn: TcpStream,
+        monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
+    ) -> Result<Monitor> {
+        // Build an index that maps from CID to the gateway the CID was sent to.
+        let cid_to_gateway = {
+            let mut m = HashMap::new();
+            for (gw, state) in gateway_states.iter() {
+                let state = state.lock().await;
+                m.insert(state.cid_v1.clone().unwrap(), gw.clone());
             }
+            m
+        };
 
-            match event.inner {
-                EventType::BitswapMessage(msg) => {
-                    for entry in &msg.wantlist_entries {
-                        if cids.contains(&entry.cid.path) {
-                            debug!("received interesting CID {}", entry.cid.path);
-                            let gw_name = cid_to_gateway
-                                .get(&entry.cid.path)
-                                .expect("missing CID in state list");
-                            let state = gateway_states
-                                .get(gw_name)
-                                .expect("missing gateway in state list");
+        let mut monitoring_client = MonitoringClient::new(conn)
+            .await
+            .context("unable to create Bitswap monitoring client")?;
+        let remote = monitoring_client.remote;
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
 
-                            info!(
-                                "got wantlist CID {} from peer {}, which is gateway {}",
-                                entry.cid.path, event.peer, gw_name
-                            );
-
-                            {
-                                let mut state = state.lock().await;
-                                assert!(
-                                    entry.cid.path.eq(state.cid_v1.as_ref().unwrap()),
-                                    "CID mismatch in CID-to-gw map"
-                                );
-                                assert!(
-                                    state.wantlist_message.is_none(),
-                                    "attempting to add multiple wantlist messages for one CID",
-                                );
-
-                                state.wantlist_message = Some(JSONMessage {
-                                    timestamp: event.timestamp,
-                                    peer: event.peer.clone(),
-                                    address: None,
-                                    received_entries: Some(msg.wantlist_entries.clone()),
-                                    full_want_list: Some(msg.full_wantlist),
-                                    peer_connected: None,
-                                    peer_disconnected: None,
-                                    connect_event_peer_found: None,
-                                });
+        tokio::task::spawn(async move {
+            let mut ready_tx = Some(monitoring_ready_tx);
+            debug!("attempting to receive Bitswap messages from {}...", remote);
+            loop {
+                select! {
+                    _ = &mut shutdown_rx => {
+                        // Shut down.
+                        debug!("{}: shutting down monitoring cleanly",remote);
+                        break
+                    },
+                    event = monitoring_client.next() => {
+                        match event {
+                            None => { break }
+                            Some(event) => {
+                                if let Err(e) = Self::handle_event(&remote, event, &cid_to_gateway, &mut cids, &gateway_states, &mut ready_tx).await {
+                                    error!("{}: unable to handle event: {}",remote,e);
+                                    break
+                                }
                             }
-
-                            // We remove this from our interesting CID list because we only need it once.
-                            cids.remove(&entry.cid.path);
-
-                            break;
                         }
                     }
                 }
-                EventType::ConnectionEvent(_) => {}
             }
+
+            info!("bitswap monitoring disconnected");
+        });
+
+        Ok(Monitor {
+            shutdown_chan: shutdown_tx,
+        })
+    }
+
+    async fn handle_event(
+        remote: &SocketAddr,
+        event: Result<PushedEvent>,
+        cid_to_gateway: &HashMap<String, String>,
+        cids: &mut HashSet<String>,
+        gateway_states: &Arc<HashMap<String, Mutex<ProbingState>>>,
+        ready_tx: &mut Option<tokio::sync::oneshot::Sender<()>>,
+    ) -> Result<()> {
+        let event = event.context("unable to receive event")?;
+
+        if let Some(sender) = ready_tx.take() {
+            debug!("got bitswap messages, connection is working");
+            sender.send(()).unwrap();
+        }
+        match event.inner {
+            EventType::BitswapMessage(msg) => {
+                for entry in &msg.wantlist_entries {
+                    if cids.contains(&entry.cid.path) {
+                        debug!("{}: received interesting CID {}", remote, entry.cid.path);
+                        let gw_name = cid_to_gateway
+                            .get(&entry.cid.path)
+                            .expect("missing CID in state list");
+                        let state = gateway_states
+                            .get(gw_name)
+                            .expect("missing gateway in state list");
+
+                        info!(
+                            "{}: got wantlist CID {} from peer {}, which is gateway {}",
+                            remote, entry.cid.path, event.peer, gw_name
+                        );
+
+                        {
+                            let mut state = state.lock().await;
+                            assert!(
+                                entry.cid.path.eq(state.cid_v1.as_ref().unwrap()),
+                                "CID mismatch in CID-to-gw map"
+                            );
+                            assert!(
+                                state.wantlist_message.is_none(),
+                                "attempting to add multiple wantlist messages for one CID",
+                            );
+
+                            state.wantlist_message = Some(JSONMessage {
+                                timestamp: event.timestamp,
+                                peer: event.peer.clone(),
+                                address: None,
+                                received_entries: Some(msg.wantlist_entries.clone()),
+                                full_want_list: Some(msg.full_wantlist),
+                                peer_connected: None,
+                                peer_disconnected: None,
+                                connect_event_peer_found: None,
+                            });
+                        }
+
+                        // We remove this from our interesting CID list because we only need it once.
+                        cids.remove(&entry.cid.path);
+
+                        break;
+                    }
+                }
+            }
+            EventType::ConnectionEvent(_) => {}
+        }
+        Ok(())
+    }
+
+    async fn close(self) -> Result<()> {
+        let Monitor { shutdown_chan } = self;
+
+        if let Err(_) = shutdown_chan.send(()) {
+            return Err(err_msg(
+                "unable to shut down worker cleanly, probably died in the meantime",
+            ));
         }
 
-        info!("bitswap monitoring disconnected");
-    });
-
-    Ok(monitoring_client)
+        Ok(())
+    }
 }
 
 /// Adds the data of the given gateway states to the monitoring IPFS node via its API.
