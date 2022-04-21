@@ -73,9 +73,14 @@ struct UserData {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 enum NavigationElement {
-    EntryPointTable { cid: Vec<u8>, table_name: String },
-    UnixFSLinksTable { block_id: i32, table_name: String },
+    EntryPointTable {
+        cid: Vec<u8>,
+        table_name: String },
+    UnixFSLinksTable {
+        block_id: i32,
+        table_name: String },
 }
 
 fn go_up_one_level(siv: &mut Cursive) {
@@ -492,6 +497,7 @@ struct UnixFSLink {
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum UnixFSEntryPointColumn {
     ParentBlockID,
+    #[allow(dead_code)]
     ParentCID,
     ParentNumLinks,
     ParentLastSuccessfulResolve,
@@ -587,6 +593,7 @@ impl TableViewItem<UnixFSEntryPointColumn> for UnixFSEntryPoint {
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 enum DirectoryListingColumn {
     ChildName,
+    #[allow(dead_code)]
     ChildCID,
     ChildSize,
     ChildBlockID,

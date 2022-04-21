@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 use std::{env, thread};
+use protobuf::Message;
 
 fn main() -> Result<()> {
     let matches = App::new("IPFS Resolver")
@@ -391,6 +392,7 @@ enum Res {
     SkippedNotFSRelated,
     SkippedCBOR,
     SkippedExists,
+    #[allow(dead_code)]
     SkippedHAMTShard,
     SkippedMetadata,
     SkippedSymlink,
@@ -502,8 +504,8 @@ fn process_single_cid(
         Codec::DagProtobuf => {
             let object_data =
                 ipfs::query_ipfs_for_object_data(&ipfs_api_base, resolve_timeout, &cid_string)?;
-            let node: unixfs::Data =
-                protobuf::parse_from_bytes(&object_data).context("unable to parse protobuf")?;
+            let node = unixfs::Data::parse_from_bytes(&object_data)
+                .context("unable to parse protobuf")?;
             match node.get_Type() {
                 unixfs::Data_DataType::Directory => &*UNIXFS_TYPE_DIRECTORY,
                 unixfs::Data_DataType::File => &*UNIXFS_TYPE_FILE,
