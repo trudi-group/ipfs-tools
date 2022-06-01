@@ -75,12 +75,8 @@ struct UserData {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 enum NavigationElement {
-    EntryPointTable {
-        cid: Vec<u8>,
-        table_name: String },
-    UnixFSLinksTable {
-        block_id: i32,
-        table_name: String },
+    EntryPointTable { cid: Vec<u8>, table_name: String },
+    UnixFSLinksTable { block_id: i32, table_name: String },
 }
 
 fn go_up_one_level(siv: &mut Cursive) {
