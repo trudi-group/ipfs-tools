@@ -27,6 +27,9 @@ mod config;
 async fn main() -> Result<()> {
     logging::set_up_logging(false)?;
 
+    // Get current timestamp as an ID for the measurement.
+    let measurement_id = chrono::Utc::now().timestamp();
+
     // Set up CLI.
     let matches = App::new("IPFS Bitswap monitoring content discovery tool")
         .version(clap::crate_version!())
@@ -267,6 +270,7 @@ async fn main() -> Result<()> {
                 .map(
                     |((c, entry), (monitor_name, peer_id, connected_addrs))| OutputCSVRow {
                         monitor: monitor_name,
+                        measurement_id,
                         peer_id,
                         connected_addrs,
                         cid: c,
@@ -319,6 +323,8 @@ async fn main() -> Result<()> {
 #[derive(Debug, Clone, Serialize)]
 pub struct OutputCSVRow {
     pub monitor: String,
+    pub measurement_id: i64,
+
     pub peer_id: String,
     pub connected_addrs: String,
     pub cid: String,
