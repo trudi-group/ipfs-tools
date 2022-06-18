@@ -1,0 +1,63 @@
+# Source: https://github.com/actions-rs/meta/blob/master/recipes/quickstart.md
+name: CI
+on:
+  # See the documentation for more intricate event dispatch here:
+  # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#on
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - "*"
+jobs:
+  check_test:
+    name: Cargo Check & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libncursesw5-dev libssl-dev protobuf-compiler
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+# We're not quite ready for clippy yet...
+#      - run: rustup component add clippy
+#      - uses: actions-rs/cargo@v1
+#        with:
+#          command: clippy
+#          args: -- -D warnings
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - run: rustup component add rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  docker_build:
+    name: Build in Docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Build Docker Image
+        run: ./build-in-docker.sh
