@@ -75,6 +75,29 @@ pub struct PushedEvent {
     pub inner: EventType,
 }
 
+impl PushedEvent {
+    /// Creates a constant-width identifier for this event.
+    /// This is potentially expensive.
+    pub fn constant_width_identifier(&self) -> String {
+        // TODO it would be nice if this didn't return a string. I want something that implements Debug, and then formats this on the fly.
+        match &self.inner {
+            EventType::BitswapMessage(msg) => {
+                let mut addrs = msg
+                    .connected_addresses
+                    .iter()
+                    .map(|ma| format!("{}", ma))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                addrs.truncate(30);
+                format!("{:52} [{:30}]", self.peer, addrs)
+            }
+            EventType::ConnectionEvent(conn_event) => {
+                format!("{:52} {:32}", self.peer, format!("{}", conn_event.remote))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum EventType {
     #[serde(rename = "bitswap_message")]
