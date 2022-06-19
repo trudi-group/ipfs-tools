@@ -20,7 +20,7 @@ tree_magic = "0.2.3"
 chardet = { git = "https://github.com/mrd0ll4r/rust-chardet" }
 lazy_static = "1.4.0"
 protobuf = "2.14.0"
-whatlang = "0.7.3"
+whatlang = "0.13.0"
 chardetng = "0.1.6"
 chrono = "0.4.11"
 diesel = { version = "1.4.4", features = ["postgres","chrono"] }
