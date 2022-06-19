@@ -6,17 +6,26 @@ use std::path::Path;
 use crate::Result;
 
 /// Configuration file for bitswap monitoring client.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Config {
     /// Configures what monitors to connect to.
     pub(crate) monitors: Vec<MonitorConfig>,
 
     /// Specifies on what address a prometheus endpoint will be created.
     pub(crate) prometheus_address: String,
+
+    /// Specifies where MaxMind GeoLite databases are located.
+    /// Defaults to /usr/local/share/GeoIP if unspecified.
+    #[serde(default = "default_geoip_database_path")]
+    pub(crate) geoip_database_path: String,
+}
+
+fn default_geoip_database_path() -> String {
+    "/usr/local/share/GeoIP".to_string()
 }
 
 /// Configuration for a single monitor to connect to.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct MonitorConfig {
     /// The name of the monitor.
     pub(crate) name: String,

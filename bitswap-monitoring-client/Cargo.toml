@@ -1,6 +1,6 @@
 [package]
 name = "bitswap-monitoring-client"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Leo Balduf <leobalduf@gmail.com>"]
 edition = "2018"
 
@@ -20,3 +20,12 @@ lazy_static = "1.4.0"
 serde = "1.0.110"
 serde_yaml = "0.8.13"
 clap = "2.33.3"
+
+# MaxMind database reader.
+maxminddb = "0.23.0"
+
+# Multiaddress parser.
+multiaddr = "^0.13"
+
+# ISO 3166-1 countries.
+celes = "2.2.0"

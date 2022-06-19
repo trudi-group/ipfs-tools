@@ -8,7 +8,11 @@ extern crate prometheus;
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
-use std::env;
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
+use std::{env, path};
 use tokio::net::TcpStream;
 
 use crate::config::Config;
@@ -16,7 +20,6 @@ use ipfs_monitoring_plugin_client::tcp::{
     EventType, MonitoringClient, BLOCK_PRESENCE_TYPE_DONT_HAVE, BLOCK_PRESENCE_TYPE_HAVE,
 };
 use ipfs_resolver_common::{logging, wantlist, Result};
-use prometheus::core::{AtomicI64, GenericCounter};
 
 mod config;
 mod prom;
@@ -52,14 +55,64 @@ async fn main() -> Result<()> {
     let cfg = Config::open(cfg).context("unable to load config")?;
     debug!("read config {:?}", cfg);
 
+    run_with_config(cfg).await
+}
+
+fn read_geoip_database(cfg: Config) -> Result<maxminddb::Reader<Vec<u8>>> {
+    let geoip_db_path = path::Path::new(&cfg.geoip_database_path);
+
+    let country_db_path = geoip_db_path.join("GeoLite2-Country.mmdb");
+    debug!(
+        "attempting to read GeoLite2 Country database at {:?}...",
+        country_db_path
+    );
+    let country_reader = maxminddb::Reader::open_readfile(country_db_path)
+        .context("unable to open GeoLite2 Country database")?;
+    debug!("successfully opened GeoLite2 Country database");
+
+    let country_db_ts = chrono::DateTime::<chrono::Utc>::from(
+        UNIX_EPOCH + Duration::from_secs(country_reader.metadata.build_epoch),
+    );
+    debug!(
+        "loaded MaxMind country database \"{}\", created {}, with {} entries",
+        country_reader.metadata.database_type,
+        country_db_ts.format("%+"),
+        country_reader.metadata.node_count
+    );
+    if (chrono::Utc::now() - country_db_ts)
+        > chrono::Duration::from_std(Duration::from_secs(30 * 24 * 60 * 60)).unwrap()
+    {
+        warn!(
+            "MaxMind GeoIP country database is older than 30 days (created {})",
+            country_db_ts.format("%+")
+        )
+    }
+
+    debug!("testing MaxMind database...");
+    let google_country = country_reader
+        .lookup::<maxminddb::geoip2::Country>("8.8.8.8".parse().unwrap())
+        .context("unable to look up 8.8.8.8 in Country database")?;
+    debug!("got country {:?} for IP 8.8.8.8", google_country);
+
+    Ok(country_reader)
+}
+
+async fn run_with_config(cfg: Config) -> Result<()> {
+    // Read GeoIP databases
+    info!("reading MaxMind GeoLite2 database...");
+    let country_db = read_geoip_database(cfg.clone()).context("unable to open GeoIP databases")?;
+    let country_db = Arc::new(country_db);
+    info!("successfully read MaxMind database");
+
     // Set up prometheus
     let prometheus_address = cfg
         .prometheus_address
         .parse()
         .expect("invalid prometheus_address");
 
-    info!("starting prometheus server");
+    debug!("starting prometheus server");
     prom::run_prometheus(prometheus_address)?;
+    info!("started prometheus server");
 
     // Connect to monitors
     info!("starting infinite connection loop, try Ctrl+C to exit");
@@ -67,78 +120,21 @@ async fn main() -> Result<()> {
         .monitors
         .into_iter()
         .map(|c| {
+            let country_db = country_db.clone();
+
             tokio::spawn(async move {
                 let name = c.name.clone();
                 let addr = c.address;
 
-                let num_messages = prom::BITSWAP_MESSAGES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str()])
-                    .unwrap();
-
-                let num_cancels = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "cancel", "false"])
-                    .unwrap();
-                let num_want_block = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "want_block", "false"])
-                    .unwrap();
-                let num_want_block_send_dont_have = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "want_block", "true"])
-                    .unwrap();
-                let num_want_have = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "want_have", "false"])
-                    .unwrap();
-                let num_want_have_send_dont_have = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "want_have", "true"])
-                    .unwrap();
-                let num_unknown = prom::WANTLIST_ENTRIES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "unknown", "false"])
-                    .unwrap();
-
-                let num_connected = prom::CONNECTION_EVENTS_CONNECTED
-                    .get_metric_with_label_values(&[name.as_str()])
-                    .unwrap();
-                let num_disconnected = prom::CONNECTION_EVENTS_DISCONNECTED
-                    .get_metric_with_label_values(&[name.as_str()])
-                    .unwrap();
-
-                let num_wl_messages_incremental = prom::WANTLIST_MESSAGES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "false"])
-                    .unwrap();
-                let num_wl_messages_full = prom::WANTLIST_MESSAGES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "true"])
-                    .unwrap();
-
-                let num_blocks = prom::BITSWAP_BLOCKS_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str()])
-                    .unwrap();
-
-                let num_block_presence_have = prom::BITSWAP_BLOCK_PRESENCES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "HAVE"])
-                    .unwrap();
-                let num_block_presence_dont_have = prom::BITSWAP_BLOCK_PRESENCES_RECEIVED
-                    .get_metric_with_label_values(&[name.as_str(), "DONT_HAVE"])
-                    .unwrap();
+                // Create metrics for a few popular countries ahead of time.
+                let mut metrics_by_country =
+                    prom::MetricsByMonitorAndCountry::create_basic_set(&name);
 
                 loop {
-                    let res = connect_and_receive(
-                        &num_messages,
-                        &num_cancels,
-                        &num_want_block,
-                        &num_want_block_send_dont_have,
-                        &num_want_have,
-                        &num_want_have_send_dont_have,
-                        &num_unknown,
-                        &num_connected,
-                        &num_disconnected,
-                        &num_wl_messages_incremental,
-                        &num_wl_messages_full,
-                        &num_blocks,
-                        &num_block_presence_have,
-                        &num_block_presence_dont_have,
-                        &name,
-                        &addr,
-                    )
-                    .await;
+                    let country_db = country_db.clone();
+                    let res =
+                        connect_and_receive(&mut metrics_by_country, &name, &addr, country_db)
+                            .await;
 
                     info!("monitor {}: result: {:?}", name, res);
 
@@ -158,22 +154,10 @@ async fn main() -> Result<()> {
 }
 
 async fn connect_and_receive(
-    num_messages: &GenericCounter<AtomicI64>,
-    num_entry_cancels: &GenericCounter<AtomicI64>,
-    num_entry_want_block: &GenericCounter<AtomicI64>,
-    num_entry_want_block_send_dont_have: &GenericCounter<AtomicI64>,
-    num_entry_want_have: &GenericCounter<AtomicI64>,
-    num_entry_want_have_send_dont_have: &GenericCounter<AtomicI64>,
-    num_entry_unknown: &GenericCounter<AtomicI64>,
-    num_connected: &GenericCounter<AtomicI64>,
-    num_disconnected: &GenericCounter<AtomicI64>,
-    num_wl_messages_incremental: &GenericCounter<AtomicI64>,
-    num_wl_messages_full: &GenericCounter<AtomicI64>,
-    num_blocks: &GenericCounter<AtomicI64>,
-    num_block_presence_have: &GenericCounter<AtomicI64>,
-    num_block_presence_dont_have: &GenericCounter<AtomicI64>,
+    metrics_by_country: &mut HashMap<String, prom::MetricsByMonitorAndCountry>,
     monitor_name: &str,
     address: &str,
+    country_db: Arc<maxminddb::Reader<Vec<u8>>>,
 ) -> Result<()> {
     debug!("connecting to monitor {} at {}...", monitor_name, address);
     let conn = TcpStream::connect(address).await?;
@@ -195,6 +179,93 @@ async fn connect_and_receive(
                     info!("receiving messages from monitor {}...", monitor_name)
                 }
 
+                // Extract a multiaddress to use for GeoIP queries.
+                let origin_ma = match &event.inner {
+                    EventType::BitswapMessage(msg) => msg.connected_addresses.first(),
+                    EventType::ConnectionEvent(conn_event) => Some(&conn_event.remote),
+                };
+                debug!(
+                    "{}: extracted origin multiaddress {:?} from event {:?}",
+                    monitor_name, origin_ma, event
+                );
+
+                let origin_ip = origin_ma
+                    .map(|ma| ma.iter().next())
+                    .map(|p| match p {
+                        None => None,
+                        Some(p) => match p {
+                            multiaddr::Protocol::Ip4(addr) => Some(IpAddr::V4(addr)),
+                            multiaddr::Protocol::Ip6(addr) => Some(IpAddr::V6(addr)),
+                            _ => None,
+                        },
+                    })
+                    .flatten();
+                debug!(
+                    "{}: extracted IP {:?} from multiaddress {:?}",
+                    monitor_name, origin_ip, origin_ma
+                );
+
+                let origin_country = match origin_ip {
+                    None => prom::COUNTRY_NAME_UNKNOWN,
+                    Some(ip) => match country_db.lookup::<maxminddb::geoip2::Country>(ip) {
+                        Ok(country) => country
+                            .country
+                            .as_ref()
+                            .map(|o| o.iso_code)
+                            .flatten()
+                            .or_else(|| {
+                                debug!(
+                                    "Country lookup for IP {} has no country: {:?}",
+                                    ip, country
+                                );
+                                Some(prom::COUNTRY_NAME_UNKNOWN)
+                            })
+                            .unwrap(),
+                        Err(err) => match err {
+                            maxminddb::MaxMindDBError::AddressNotFoundError(e) => {
+                                debug!(
+                                    "{}: IP {:?} not found in MaxMind database: {}",
+                                    monitor_name, ip, e
+                                );
+                                prom::COUNTRY_NAME_UNKNOWN
+                            }
+                            _ => {
+                                error!("unable to lookup country for IP {} (from multiaddress {:?}): {:?}",ip,origin_ma,err);
+                                prom::COUNTRY_NAME_ERROR
+                            }
+                        },
+                    },
+                };
+                debug!(
+                    "{}: determined origin of IP {:?} to be {}",
+                    monitor_name, origin_ip, origin_country
+                );
+
+                let metrics = match metrics_by_country.get(origin_country) {
+                    None => {
+                        debug!(
+                            "{}: country metric for {} missing, creating on the fly...",
+                            monitor_name, origin_country
+                        );
+                        let new_metrics =
+                            match prom::MetricsByMonitorAndCountry::new_from_iso3166_alpha2(
+                                monitor_name,
+                                origin_country,
+                            ) {
+                                Ok(new_metrics) => new_metrics,
+                                Err(e) => {
+                                    error!("unable to create country metric for country {} on the fly: {:?}",origin_country,e);
+                                    continue;
+                                }
+                            };
+                        // We know that the origin_country value is safe, since we were able to create metrics with it.
+                        metrics_by_country.insert(origin_country.to_string(), new_metrics);
+                        // We know this is safe since we just inserted it.
+                        metrics_by_country.get(origin_country).unwrap()
+                    }
+                    Some(m) => m,
+                };
+
                 // Create a constant-width identifier for logging.
                 // This makes logging output nicely aligned :)
                 // We only use this in debug logging, so we only create it if debug logging is enabled.
@@ -208,43 +279,43 @@ async fn connect_and_receive(
                     EventType::ConnectionEvent(conn_event) => {
                         match conn_event.connection_event_type {
                             ipfs_monitoring_plugin_client::tcp::CONN_EVENT_CONNECTED => {
-                                num_connected.inc();
+                                metrics.num_connected.inc();
                                 debug!("{} {:12}", ident, "CONNECTED")
                             }
                             ipfs_monitoring_plugin_client::tcp::CONN_EVENT_DISCONNECTED => {
-                                num_disconnected.inc();
+                                metrics.num_disconnected.inc();
                                 debug!("{} {:12}", ident, "DISCONNECTED")
                             }
                             _ => {}
                         }
                     }
                     EventType::BitswapMessage(msg) => {
-                        num_messages.inc();
+                        metrics.num_messages.inc();
 
                         if !msg.wantlist_entries.is_empty() {
                             if msg.full_wantlist {
-                                num_wl_messages_full.inc();
+                                metrics.num_messages_with_wl_full.inc();
                             } else {
-                                num_wl_messages_incremental.inc();
+                                metrics.num_messages_with_wl_incremental.inc();
                             }
 
                             for entry in msg.wantlist_entries.iter() {
                                 if entry.cancel {
-                                    num_entry_cancels.inc();
+                                    metrics.num_entries_cancel.inc();
                                 } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
                                     if entry.send_dont_have {
-                                        num_entry_want_block_send_dont_have.inc();
+                                        metrics.num_entries_want_block_send_dont_have.inc();
                                     } else {
-                                        num_entry_want_block.inc();
+                                        metrics.num_entries_want_block.inc();
                                     }
                                 } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
                                     if entry.send_dont_have {
-                                        num_entry_want_have_send_dont_have.inc();
+                                        metrics.num_entries_want_have_send_dont_have.inc();
                                     } else {
-                                        num_entry_want_have.inc();
+                                        metrics.num_entries_want_have.inc();
                                     }
                                 } else {
-                                    num_entry_unknown.inc();
+                                    error!("monitor {}: ignoring wantlist entry with invalid want type: {:?}",monitor_name,entry);
                                 }
 
                                 debug!(
@@ -276,7 +347,7 @@ async fn connect_and_receive(
 
                         if !msg.blocks.is_empty() {
                             for entry in msg.blocks.iter() {
-                                num_blocks.inc();
+                                metrics.num_blocks.inc();
                                 debug!("{} {:9} {}", ident, "BLOCK", entry.path)
                             }
                         }
@@ -284,9 +355,11 @@ async fn connect_and_receive(
                         if !msg.block_presences.is_empty() {
                             for entry in msg.block_presences.iter() {
                                 match entry.block_presence_type {
-                                    BLOCK_PRESENCE_TYPE_HAVE => num_block_presence_have.inc(),
+                                    BLOCK_PRESENCE_TYPE_HAVE => {
+                                        metrics.num_block_presence_have.inc()
+                                    }
                                     BLOCK_PRESENCE_TYPE_DONT_HAVE => {
-                                        num_block_presence_dont_have.inc()
+                                        metrics.num_block_presence_dont_have.inc()
                                     }
                                     _ => {
                                         warn!(

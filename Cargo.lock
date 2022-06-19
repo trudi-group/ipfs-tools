@@ -179,8 +179,9 @@ dependencies = [
 
 [[package]]
 name = "bitswap-monitoring-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "celes",
  "chrono",
  "clap",
  "failure",
@@ -190,6 +191,8 @@ dependencies = [
  "ipfs_monitoring_plugin_client",
  "lazy_static",
  "log",
+ "maxminddb",
+ "multiaddr",
  "prometheus",
  "prometheus_exporter",
  "serde",
@@ -343,6 +346,15 @@ name = "cc"
 version = "1.0.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79c2681d6594606957bbb8631c4b90a7fcaaa72cdb714743a437b156d6a7eedd"
+
+[[package]]
+name = "celes"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e30b649e0a7a41e2ea1714e65e5bc5c857ddca7569752fa540ab7c582344c178"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "cfg-if"
@@ -1785,6 +1797,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68f2d64f2edebec4ce84ad108148e67e1064789bee435edc5b60ad398714a3a9"
 
 [[package]]
+name = "ipnetwork"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4088d739b183546b239688ddbc79891831df421773df95e236daf7867866d355"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "itertools"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1886,6 +1907,18 @@ name = "matches"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e378b66a060d48947b590737b30a1be76706c8dd7b8ba0f2fe3989c68a853f"
+
+[[package]]
+name = "maxminddb"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe2ba61113f9f7a9f0e87c519682d39c43a6f3f79c2cc42c3ba3dda83b1fa334"
+dependencies = [
+ "ipnetwork",
+ "log",
+ "memchr 2.4.1",
+ "serde",
+]
 
 [[package]]
 name = "maybe-uninit"
