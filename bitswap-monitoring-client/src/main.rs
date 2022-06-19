@@ -197,20 +197,11 @@ async fn connect_and_receive(
 
                 // Create a constant-width identifier for logging.
                 // This makes logging output nicely aligned :)
-                let ident = match &event.inner {
-                    EventType::BitswapMessage(msg) => {
-                        let mut addrs = msg
-                            .connected_addresses
-                            .iter()
-                            .map(|ma| format!("{}", ma))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        addrs.truncate(30);
-                        format!("{:52} [{:30}]", event.peer, addrs,)
-                    }
-                    EventType::ConnectionEvent(conn_event) => {
-                        format!("{:52} {:32}", event.peer, format!("{}", conn_event.remote))
-                    }
+                // We only use this in debug logging, so we only create it if debug logging is enabled.
+                let ident = if log_enabled!(log::Level::Debug) {
+                    event.constant_width_identifier()
+                } else {
+                    "".to_string()
                 };
 
                 match &event.inner {
