@@ -1708,7 +1708,7 @@ dependencies = [
  "failure",
  "flexi_logger 0.15.12",
  "glob",
- "hyper 0.13.10",
+ "hyper 0.14.14",
  "ipfs-api",
  "log",
  "parity-multiaddr 0.11.2",
