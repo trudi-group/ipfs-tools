@@ -468,12 +468,13 @@ dependencies = [
 
 [[package]]
 name = "common-multipart-rfc7578"
-version = "0.3.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76d0a7a42b9c13f2b2a1a7e64b949a19bcb56a49b190076e60261001ceaa5304"
+checksum = "22328b3864f1d8dbe7036f3f2fdfdcb1f367af43dca418943d396fbf8c4b8021"
 dependencies = [
  "bytes 1.1.0",
- "futures 0.3.21",
+ "futures-core",
+ "futures-util",
  "http 0.2.5",
  "mime",
  "mime_guess",
@@ -887,9 +888,9 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "3.0.2"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
+checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
 dependencies = [
  "dirs-sys",
 ]
@@ -1486,13 +1487,13 @@ dependencies = [
 
 [[package]]
 name = "hyper-multipart-rfc7578"
-version = "0.5.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3538ce6aeb81f7cd0d547a42435944d2283714a3f696630318bc47bd839fcfc9"
+checksum = "63ca8108ac0ae98d310d41cddb11c6b822e8aca865dbe421366934e6f7f72e10"
 dependencies = [
  "bytes 1.1.0",
  "common-multipart-rfc7578",
- "futures 0.3.21",
+ "futures-core",
  "http 0.2.5",
  "hyper 0.14.14",
 ]
@@ -1576,19 +1577,18 @@ dependencies = [
 
 [[package]]
 name = "ipfs-api"
-version = "0.13.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9d88d64cada58179fa49c803c2026ef825234faa427620984fca6e6b54b8636"
+checksum = "be4fb73f068ed6bb5e9e14f786c0601f68ac5d335cc41f3dbd42631a4bb6e7fa"
 dependencies = [
  "ipfs-api-backend-hyper",
- "ipfs-api-prelude",
 ]
 
 [[package]]
 name = "ipfs-api-backend-hyper"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa89b3cf763f52e1d0cc00cfcec6c20388556891789d180006e4cb878fa78cc9"
+checksum = "e03abe4f8fbe6c8a8d578376f12db0a6c9ba2703ae2e73734639851f10fd9140"
 dependencies = [
  "async-trait",
  "bytes 1.1.0",
@@ -1597,22 +1597,23 @@ dependencies = [
  "hyper 0.14.14",
  "hyper-multipart-rfc7578",
  "ipfs-api-prelude",
- "serde",
  "thiserror",
 ]
 
 [[package]]
 name = "ipfs-api-prelude"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb5d1bed0ce082bf4276d09c644d4a0f3b1b11b7ab3054fcfbc2aa0b015a4da"
+checksum = "60f645bd743b25887232702ad7f87e885eefb8eb59b6119f17e457b0e99f8527"
 dependencies = [
  "async-trait",
  "bytes 1.1.0",
+ "cfg-if 1.0.0",
  "common-multipart-rfc7578",
  "dirs",
  "futures 0.3.21",
  "http 0.2.5",
+ "multibase 0.9.1",
  "parity-multiaddr 0.11.2",
  "serde",
  "serde_json",
@@ -3681,9 +3682,9 @@ checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
 name = "typed-builder"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a46ee5bd706ff79131be9c94e7edcb82b703c487766a114434e5790361cf08c5"
+checksum = "89851716b67b937e393b3daa8423e67ddfc4bbbf1654bcf05488e95e0828db0c"
 dependencies = [
  "proc-macro2",
  "quote",

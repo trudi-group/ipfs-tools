@@ -14,7 +14,7 @@ diesel = { version = "^1", features = ["postgres","chrono","r2d2"] }
 dotenv = "^0.15"
 lazy_static = "^1"
 chrono = "^0.4"
-ipfs-api = "^0.13"
+ipfs-api = "^0.15"
 whatlang = "^0.7"
 cid = "^0.5"
 multibase = "^0.8"
