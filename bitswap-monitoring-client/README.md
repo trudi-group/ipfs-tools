@@ -39,6 +39,7 @@ Metrics are provided via a Prometheus HTTP endpoint.
 All metrics contain fields for the origin `monitor` (which is configured with the `name` field of the configuration file) as well as the `origin_country` of the logged event.
 Metrics for origin countries are created on the fly, if any events from that country are logged.
 There are two special countries `Unknown` and `Error`, indicating whether we were unable to determine an origin for an event, or whether GeoIP lookup failed with an error.
+Multiaddresses containing a P2P circuit, i.e., relayed connections, are ignored and `Unknown` is used for their origin country.
 See also the [implementation](./src/prom.rs).
 
 ### `bitswap_messages_received`

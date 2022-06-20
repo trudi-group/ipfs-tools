@@ -181,8 +181,27 @@ async fn connect_and_receive(
 
                 // Extract a multiaddress to use for GeoIP queries.
                 let origin_ma = match &event.inner {
-                    EventType::BitswapMessage(msg) => msg.connected_addresses.first(),
-                    EventType::ConnectionEvent(conn_event) => Some(&conn_event.remote),
+                    EventType::BitswapMessage(msg) => {
+                        // We filter out any p2p-circuit addresses, since we cannot correctly geolocate those anyway.
+                        msg.connected_addresses.iter().find(|a|
+                            // Test if any part of the multiaddress is p2p circuit.
+                            // Negate that, s.t. we find addresses where no part is p2p circuit.
+                            !a.iter().any(|p| if let multiaddr::Protocol::P2pCircuit = p { true } else { false }))
+                    }
+                    EventType::ConnectionEvent(conn_event) => {
+                        if conn_event.remote.iter().any(|p| {
+                            if let multiaddr::Protocol::P2pCircuit = p {
+                                true
+                            } else {
+                                false
+                            }
+                        }) {
+                            // This is a relayed connection, ignore it.
+                            None
+                        } else {
+                            Some(&conn_event.remote)
+                        }
+                    }
                 };
                 debug!(
                     "{}: extracted origin multiaddress {:?} from event {:?}",
