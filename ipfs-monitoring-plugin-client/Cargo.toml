@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 ipfs-resolver-common = { path = "../common" }
 tokio = { version = "^1", features = ["net", "sync", "macros"] }
-tokio-util = { version = "^0.6", features = ["codec"] }
+tokio-util = { version = "^0.7", features = ["codec"] }
 tokio-serde = { version = "^0.8", features = ["json"] }
 bytes = "^1"
 log = "^0.4"
