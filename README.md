@@ -1,6 +1,6 @@
 # ipfs-tools
 
-Umbrella project for all things related to monitoring, indexing, and analyzing IPFS stuff with Rust.
+Umbrella project for all things related to monitoring and analyzing IPFS stuff with Rust.
 
 Most of the sub-projects have their own README to explain some things in more detail.
 
@@ -15,21 +15,6 @@ A binary that reads many CIDs and prints various counts about them.
 This library package holds basic building blocks used in all other packages, most of all logging and very basic types.
 This also contains the code for simulating the BitSwap engine.
 
-### `csv-to-graph` (inactive)
-
-A binary that converts CSV exports from the database (blocks and references) to a graph in KONECT format.
-Due to the size of the exports, this is done incrementally and on-disk.
-
-### `db` (inactive)
-
-This library package deals with all things db-related.
-Specifically, it holds the schemas, types, and functions used by all other packages to interact with the database.
-
-### `db-exporter` (inactive)
-
-This binary package implements a small tool that tracks the number of records in the database and exports them via
-Prometheus.
-
 ### `ipfs-gateway-finder`
 
 This is a binary that identifies public gateways on the overlay network.
@@ -40,18 +25,6 @@ these CIDs.
 
 This is a binary tool to convert logged BitSwap messages and connection events to CSV data to be analyzed in R.
 It tracks connection durations and simulates the BitSwap engine.
-
-### `ipfs-walk-tree` (inactive)
-
-This binary tool (with a nice terminal UI) uses the database to explore the IPFS DAG.
-It can traverse the DAG downwards as well as upwards, if we have parent blocks indexed.
-This needs a curses library, e.g., `libncursesw5-dev` on Debian.
-
-### `resolver` (inactive)
-
-This binary package produces an indexer.
-It interacts with an IPFS node via HTTP, parses IPFS blocks' protobuf, and finally puts the results in a database.
-This needs a protobuf compiler, e.g., `protobuf-compiler` on Debian.
 
 ### `ipfs-monitoring-plugin-client`
 
@@ -88,7 +61,7 @@ This gives us an older-ish libc, which improves compatibility with older-ish sys
 
 ### Manually
 
-You'll need the latest stable Rust and a bunch of system-level dependencies, see above.
+You'll need the latest stable Rust.
 Then execute, in the topmost directory:
 
 ```
