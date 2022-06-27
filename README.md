@@ -6,10 +6,6 @@ Most of the sub-projects have their own README to explain some things in more de
 
 ## Sub-projects
 
-### `cid-converter`
-
-Inactive. This was a binary project used to convert CIDs in the database from strings to byte arrays.
-
 ### `cid-decode`
 
 A binary that reads many CIDs and prints various counts about them.
@@ -19,17 +15,17 @@ A binary that reads many CIDs and prints various counts about them.
 This library package holds basic building blocks used in all other packages, most of all logging and very basic types.
 This also contains the code for simulating the BitSwap engine.
 
-### `csv-to-graph`
+### `csv-to-graph` (inactive)
 
 A binary that converts CSV exports from the database (blocks and references) to a graph in KONECT format.
 Due to the size of the exports, this is done incrementally and on-disk.
 
-### `db`
+### `db` (inactive)
 
 This library package deals with all things db-related.
 Specifically, it holds the schemas, types, and functions used by all other packages to interact with the database.
 
-### `db-exporter`
+### `db-exporter` (inactive)
 
 This binary package implements a small tool that tracks the number of records in the database and exports them via
 Prometheus.
@@ -45,21 +41,27 @@ these CIDs.
 This is a binary tool to convert logged BitSwap messages and connection events to CSV data to be analyzed in R.
 It tracks connection durations and simulates the BitSwap engine.
 
-### `ipfs-walk-tree`
+### `ipfs-walk-tree` (inactive)
 
 This binary tool (with a nice terminal UI) uses the database to explore the IPFS DAG.
 It can traverse the DAG downwards as well as upwards, if we have parent blocks indexed.
+This needs a curses library, e.g., `libncursesw5-dev` on Debian.
 
-### `resolver`
+### `resolver` (inactive)
 
 This binary package produces an indexer.
 It interacts with an IPFS node via HTTP, parses IPFS blocks' protobuf, and finally puts the results in a database.
+This needs a protobuf compiler, e.g., `protobuf-compiler` on Debian.
 
-### `wantlist-client` and `wantlist-client-lib`
+### `ipfs-monitoring-plugin-client`
 
-This binary package implements a TCP client to the TCP server implemented in `go-bitswap`.
-This makes it possible to receive and process BitSwap messages in real-time.
-Additionally, the binary runs a prometheus server to publish metrics about the number of messages received.
+A library package implementing a client to our [monitoring plugin](https://github.com/wiberlin/ipfs-metric-exporter).
+This provides TCP as well as HTTP functionality.
+
+### `bitswap-monitoring-client`
+
+This binary package implements a real-time analysis client for Bitswap messages.
+Additionally, the binary runs a prometheus server to publish metrics about the message stream analysed.
 
 ### `unify-bitswap-traces`
 
@@ -75,9 +77,7 @@ On Ubuntu/Debian, this should probably do it:
 
 ```
 apt-get update && apt-get install \
-  libncursesw5-dev \
-  libssl-dev \
-  protobuf-compiler
+  libssl-dev
 ```
 
 There are alternative backends to run [cursive](https://github.com/gyscos/cursive/wiki/Install-ncurses), it should be possible to use those instead of `ncurses`.

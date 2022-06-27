@@ -19,9 +19,7 @@ FROM chef AS builder
 
 # Install OS-level dependencies.
 RUN apt-get update && apt-get install -y \
-  libncursesw5-dev \
-  libssl-dev \
-  protobuf-compiler
+  libssl-dev
 
 # Get a list of Rust dependencies to build.
 COPY --from=planner /ipfs-tools/recipe.json recipe.json
