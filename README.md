@@ -87,7 +87,7 @@ There are alternative backends to run [cursive](https://github.com/gyscos/cursiv
 There is a multi-stage build setup implemented with Docker.
 The [builder stage](./Dockerfile.builder) compiles the binaries and caches dependencies, for faster incremental builds.
 This should produce an image named `ipfs-tools-builder`, which is then used in the runner stages.
-The runner stages copy out compiled artifacts from `ipfs-tools-builder` and set up a minimal runtime environment.
+The runner stage(s) copy out compiled artifacts from `ipfs-tools-builder` and set up a minimal runtime environment.
 There is a [build-docker-images.sh](./build-docker-images.sh) script that builds all these images.
 There is also a [build-in-docker.sh](./build-in-docker.sh) script that builds the builder and copies out the artifacts to the `out/` directory of the project.
 
