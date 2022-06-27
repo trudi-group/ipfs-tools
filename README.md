@@ -72,15 +72,7 @@ This is the tool used for [this paper](https://arxiv.org/abs/2104.09202).
 
 ### Dependencies
 
-You need a few dependencies to build, and also to run, I guess.
-On Ubuntu/Debian, this should probably do it:
-
-```
-apt-get update && apt-get install \
-  libssl-dev
-```
-
-There are alternative backends to run [cursive](https://github.com/gyscos/cursive/wiki/Install-ncurses), it should be possible to use those instead of `ncurses`.
+We currently build with `rustls`, so no dependencies are required.
 
 ### Docker
 

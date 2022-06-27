@@ -13,12 +13,6 @@ RUN groupadd -r ipfs \
   && useradd --no-log-init -r -g ipfs ipfs \
   && mkdir -p ipfs
 
-# Install OS dependencies.
-RUN apt-get update \
-  && apt-get install -y \
-    libssl1.1 \
-  && rm -rf /var/lib/apt/lists/*
-
 # Enter our working directory.
 WORKDIR ipfs-tools
 

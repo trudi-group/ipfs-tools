@@ -4,8 +4,7 @@ extern crate log;
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
-use ipfs_api::IpfsApi;
-use ipfs_api::{IpfsClient, TryFromUri};
+use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
 use ipfs_monitoring_plugin_client::tcp::{EventType, MonitoringClient, PushedEvent};
 use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::{logging, Result};
@@ -128,7 +127,7 @@ async fn do_probing() -> Result<()> {
         .path_and_query("/")
         .build()
         .context("invalid monitor_api_address")?;
-    let ipfs_client = ipfs_api::IpfsClient::from_str(u.to_string().as_str())?;
+    let ipfs_client = IpfsClient::from_str(u.to_string().as_str())?;
 
     let num_http_tries = matches
         .value_of("http_num_tries")
@@ -159,12 +158,12 @@ async fn do_probing() -> Result<()> {
         "getting list of gateways from {}...",
         gateway_list_url.as_str()
     );
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Some(Duration::from_secs(30)))
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
         .build()?;
 
-    let gateway_list_resp = client.get(gateway_list_url).send()?;
-    let gateway_list: Vec<String> = gateway_list_resp.json()?;
+    let gateway_list_resp = client.get(gateway_list_url).send().await?;
+    let gateway_list: Vec<String> = gateway_list_resp.json().await?;
     info!("got {} gateways", gateway_list.len());
     debug!("got gateways: {:?}", gateway_list);
 
@@ -445,7 +444,7 @@ async fn add_data_to_ipfs(
 
 /// Removes the data added for gateway probing from the monitoring IPFS node via its API.
 async fn cleanup_ipfs(
-    client: &ipfs_api::IpfsClient,
+    client: &IpfsClient,
     gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>,
 ) -> Result<()> {
     for (_, state) in gateway_states.iter() {
