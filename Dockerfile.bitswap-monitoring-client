@@ -1,6 +1,6 @@
-# Implements an image to run the wantlist-client tool.
+# Implements an image to run the bitswap-monitoring-client tool.
 # This will expose port 8088 for prometheus.
-# The executable is placed in /ipfs-tools/, the config in /ipfs-tools/config/.
+# The executable is placed in /, the config in /config/.
 # The config is copied from the builder stage (and thus verbose from the sources).
 # You can probably overwrite it by mounting your own config directory, I guess.
 
@@ -8,26 +8,20 @@
 FROM debian:buster-slim AS runtime
 
 # Create a system user to drop into.
-# This will get some small (<1000) UID and GID, which is fine since we don't write to any files.
+# This will get some small (<1000) UID and GID, which is fine since we don't write to any files on the host.
 RUN groupadd -r ipfs \
   && useradd --no-log-init -r -g ipfs ipfs \
   && mkdir -p ipfs
-
-# Install OS dependencies.
-RUN apt-get update \
-  && apt-get install -y \
-    libssl1.1 \
-  && rm -rf /var/lib/apt/lists/*
 
 # Enter our working directory.
 WORKDIR ipfs-tools
 
 # Copy compiled binaries from builder.
-COPY --from=ipfs-tools-builder /ipfs-tools/target/release/wantlist-client .
-COPY --from=ipfs-tools-builder /ipfs-tools/wantlist-client/wantlist-client-config.yaml ./config/
+COPY --from=ipfs-tools-builder /ipfs-tools/target/release/bitswap-monitoring-client .
+COPY --from=ipfs-tools-builder /ipfs-tools/bitswap-monitoring-client/config.yaml ./config/bitswap-monitoring-client-config.yaml
 
 # Set ownership.
-RUN chown -R ipfs:ipfs ./ipfs
+RUN chown -R ipfs:ipfs ./bitswap-monitoring-client
 
 # Set log level.
 ENV RUST_LOG=info
@@ -39,4 +33,4 @@ EXPOSE 8088
 USER ipfs
 
 # Run the binary.
-ENTRYPOINT ["./wantlist-client","--config","config/wantlist-client-config.yaml"]
+ENTRYPOINT ["./wantlist-client","--config","config/bitswap-monitoring-client-config.yaml"]

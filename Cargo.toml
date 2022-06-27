@@ -1,16 +1,16 @@
 [workspace]
 members = [
-    "db",
-    "resolver",
-    "db-exporter",
+#    "db",
+#    "resolver",
+#    "db-exporter",
     "common",
     "bitswap-monitoring-client",
     "ipfs-json-to-csv",
     "ipfs-gateway-finder",
     "ipfs-monitoring-plugin-client",
-    "ipfs-walk-tree",
+#    "ipfs-walk-tree",
     "cid-decode",
-    "csv-to-graph",
+#    "csv-to-graph",
     "unify-bitswap-traces",
     "bitswap-discovery-probe",
 ]

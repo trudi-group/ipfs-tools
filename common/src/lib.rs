@@ -6,7 +6,6 @@ extern crate failure;
 use failure::{Error, ResultExt};
 use std::path::PathBuf;
 
-pub mod ipfs;
 pub mod logging;
 pub mod wantlist;
 
