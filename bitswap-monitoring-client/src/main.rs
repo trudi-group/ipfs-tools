@@ -313,9 +313,9 @@ async fn connect_and_receive(
 
                         if !msg.wantlist_entries.is_empty() {
                             if msg.full_wantlist {
-                                metrics.num_messages_with_wl_full.inc();
+                                metrics.num_wantlists_full.inc();
                             } else {
-                                metrics.num_messages_with_wl_incremental.inc();
+                                metrics.num_wantlists_incremental.inc();
                             }
 
                             for entry in msg.wantlist_entries.iter() {

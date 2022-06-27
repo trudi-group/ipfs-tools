@@ -8,34 +8,7 @@ use std::net::SocketAddr;
 use std::thread;
 
 lazy_static! {
-    pub static ref WANTLIST_ENTRIES_RECEIVED: IntCounterVec = register_int_counter_vec!(
-        "wantlist_entries_received",
-        "number of wantlist entries received by monitor, entry type, send_dont_have, and origin country",
-        &["monitor", "entry_type", "send_dont_have","origin_country"]
-    )
-    .unwrap();
-    pub static ref WANTLIST_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
-        "wantlist_messages_received",
-        "number of bitswap messages received for which the wantlist was not empty, by monitor, whether the message was a full wantlist, and origin country",
-        &["monitor","full","origin_country"]
-    )
-    .unwrap();
-
-    pub static ref CONNECTION_EVENTS_CONNECTED: IntCounterVec = register_int_counter_vec!(
-        "connection_events_connected",
-        "number of connect events by monitor and origin country",
-        &["monitor","origin_country"]
-    )
-    .unwrap();
-
-    pub static ref CONNECTION_EVENTS_DISCONNECTED: IntCounterVec = register_int_counter_vec!(
-        "connection_events_disconnected",
-        "number of disconnect events by monitor and origin country",
-        &["monitor","origin_country"]
-    )
-    .unwrap();
-
-    pub static ref BITSWAP_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
+        pub static ref BITSWAP_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
         "bitswap_messages_received",
         "number of bitswap messages (both requests and responses) received by monitor and origin country",
         &["monitor","origin_country"]
@@ -53,6 +26,34 @@ lazy_static! {
         "bitswap_block_presences_received",
         "number of block presences received via bitswap, by monitor, presence type, and origin country",
         &["monitor","presence_type","origin_country"]
+    )
+    .unwrap();
+
+    pub static ref WANTLIST_ENTRIES_RECEIVED: IntCounterVec = register_int_counter_vec!(
+        "wantlist_entries_received",
+        "number of wantlist entries received by monitor, entry type, send_dont_have, and origin country",
+        &["monitor", "entry_type", "send_dont_have","origin_country"]
+    )
+    .unwrap();
+
+    pub static ref WANTLISTS_RECEIVED: IntCounterVec = register_int_counter_vec!(
+        "wantlists_received",
+        "number of bitswap messages received for which the wantlist was not empty, by monitor, whether the wantlist was a full wantlist, and origin country",
+        &["monitor","full","origin_country"]
+    )
+    .unwrap();
+
+    pub static ref CONNECTION_EVENTS_CONNECTED: IntCounterVec = register_int_counter_vec!(
+        "connection_events_connected",
+        "number of connect events by monitor and origin country",
+        &["monitor","origin_country"]
+    )
+    .unwrap();
+
+    pub static ref CONNECTION_EVENTS_DISCONNECTED: IntCounterVec = register_int_counter_vec!(
+        "connection_events_disconnected",
+        "number of disconnect events by monitor and origin country",
+        &["monitor","origin_country"]
     )
     .unwrap();
 }
@@ -75,8 +76,8 @@ pub(crate) struct MetricsByMonitorAndCountry {
     pub(crate) num_block_presence_dont_have: GenericCounter<AtomicI64>,
 
     /// Counters for Bitswap messages containing a wantlist.
-    pub(crate) num_messages_with_wl_incremental: GenericCounter<AtomicI64>,
-    pub(crate) num_messages_with_wl_full: GenericCounter<AtomicI64>,
+    pub(crate) num_wantlists_incremental: GenericCounter<AtomicI64>,
+    pub(crate) num_wantlists_full: GenericCounter<AtomicI64>,
 
     /// Counters for wantlist entries by type.
     pub(crate) num_entries_cancel: GenericCounter<AtomicI64>,
@@ -162,10 +163,10 @@ impl MetricsByMonitorAndCountry {
             num_disconnected: CONNECTION_EVENTS_DISCONNECTED
                 .get_metric_with_label_values(&[monitor_name, country_name])
                 .unwrap(),
-            num_messages_with_wl_incremental: WANTLIST_MESSAGES_RECEIVED
+            num_wantlists_incremental: WANTLISTS_RECEIVED
                 .get_metric_with_label_values(&[monitor_name, "false", country_name])
                 .unwrap(),
-            num_messages_with_wl_full: WANTLIST_MESSAGES_RECEIVED
+            num_wantlists_full: WANTLISTS_RECEIVED
                 .get_metric_with_label_values(&[monitor_name, "true", country_name])
                 .unwrap(),
             num_blocks: BITSWAP_BLOCKS_RECEIVED

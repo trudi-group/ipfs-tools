@@ -56,10 +56,11 @@ A counter that counts how many blocks were received via Bitswap.
 
 A counter that counts how many block presence indications were received via Bitswap, by the `presence_type` (`have` or `dont_have`).
 
-### `wantlist_messages_received`
+### `wantlists_received`
 
-A counter that tracks the number of Bitswap messages received for which the `want_list` was not empty, by whether the wantlist was `full` or incremental.
-A message may contain multiple entries.
+A counter that tracks the number of Bitswap `want_list`s received, by whether the wantlist was `full` or incremental.
+A message may contain one or no wantlist.
+A wantlist may contain multiple entries.
 
 ### `wantlist_entries_received`
 
