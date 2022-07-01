@@ -1,5 +1,6 @@
 use crate::Result;
-use flexi_logger::{DeferredNow, Duplicate, Logger, ReconfigurationHandle};
+use failure::ResultExt;
+use flexi_logger::{DeferredNow, Logger, LoggerHandle, TS_DASHES_BLANK_COLONS_DOT_BLANK};
 use log::Record;
 
 fn log_format(
@@ -10,7 +11,7 @@ fn log_format(
     write!(
         w,
         "[{}] {} [{}] {}:{}: {}",
-        now.now().format("%Y-%m-%d %H:%M:%S%.6f %:z"),
+        now.format(TS_DASHES_BLANK_COLONS_DOT_BLANK),
         record.level(),
         record.metadata().target(),
         //record.module_path().unwrap_or("<unnamed>"),
@@ -20,19 +21,11 @@ fn log_format(
     )
 }
 
-pub fn set_up_logging(log_to_file: bool) -> Result<ReconfigurationHandle> {
-    let mut logger = Logger::with_env_or_str("info").format(log_format);
-    if log_to_file {
-        logger = logger
-            //.log_to_file()
-            //.directory("logs")
-            .duplicate_to_stderr(Duplicate::All)
-        /*.rotate(
-            Criterion::Size(100_000_000),
-            Naming::Timestamps,
-            Cleanup::KeepLogFiles(10),
-        )*/;
-    }
+pub fn set_up_logging() -> Result<LoggerHandle> {
+    let logger = Logger::try_with_env_or_str("info")
+        .context("unable to set up logging")?
+        .use_utc()
+        .format(log_format);
 
     let handle = logger.start()?;
 

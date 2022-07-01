@@ -26,7 +26,7 @@ mod prom;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    logging::set_up_logging(false)?;
+    logging::set_up_logging()?;
 
     // Set up CLI
     let matches = App::new("IPFS Bitswap monitoring real-time analysis tool")

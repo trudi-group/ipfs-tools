@@ -15,7 +15,7 @@ use ipfs_resolver_common::{logging, Result};
 use std::io;
 
 fn main() -> Result<()> {
-    logging::set_up_logging(false)?;
+    logging::set_up_logging()?;
 
     let matches = App::new("IPFS bitswap trace unification tool")
         .version(clap::crate_version!())

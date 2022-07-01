@@ -1,11 +1,9 @@
 use failure::{err_msg, ResultExt};
 use ipfs_resolver_common::Result;
-use prometheus::core::{AtomicI64, GenericCounter};
+use prometheus::core::{AtomicU64, GenericCounter};
 use prometheus::IntCounterVec;
-use prometheus_exporter::PrometheusExporter;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::thread;
 
 lazy_static! {
         pub static ref BITSWAP_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
@@ -66,29 +64,29 @@ pub(crate) static COUNTRY_NAME_ERROR: &'static str = "Error";
 /// A set of metrics instantiated by monitor name and country.
 pub(crate) struct MetricsByMonitorAndCountry {
     /// Counter for Bitswap messages.
-    pub(crate) num_messages: GenericCounter<AtomicI64>,
+    pub(crate) num_messages: GenericCounter<AtomicU64>,
 
     /// Counter for blocks received via Bitswap.
-    pub(crate) num_blocks: GenericCounter<AtomicI64>,
+    pub(crate) num_blocks: GenericCounter<AtomicU64>,
 
     /// Counters for block presences received via Bitswap, by presence type.
-    pub(crate) num_block_presence_have: GenericCounter<AtomicI64>,
-    pub(crate) num_block_presence_dont_have: GenericCounter<AtomicI64>,
+    pub(crate) num_block_presence_have: GenericCounter<AtomicU64>,
+    pub(crate) num_block_presence_dont_have: GenericCounter<AtomicU64>,
 
     /// Counters for Bitswap messages containing a wantlist.
-    pub(crate) num_wantlists_incremental: GenericCounter<AtomicI64>,
-    pub(crate) num_wantlists_full: GenericCounter<AtomicI64>,
+    pub(crate) num_wantlists_incremental: GenericCounter<AtomicU64>,
+    pub(crate) num_wantlists_full: GenericCounter<AtomicU64>,
 
     /// Counters for wantlist entries by type.
-    pub(crate) num_entries_cancel: GenericCounter<AtomicI64>,
-    pub(crate) num_entries_want_block: GenericCounter<AtomicI64>,
-    pub(crate) num_entries_want_block_send_dont_have: GenericCounter<AtomicI64>,
-    pub(crate) num_entries_want_have: GenericCounter<AtomicI64>,
-    pub(crate) num_entries_want_have_send_dont_have: GenericCounter<AtomicI64>,
+    pub(crate) num_entries_cancel: GenericCounter<AtomicU64>,
+    pub(crate) num_entries_want_block: GenericCounter<AtomicU64>,
+    pub(crate) num_entries_want_block_send_dont_have: GenericCounter<AtomicU64>,
+    pub(crate) num_entries_want_have: GenericCounter<AtomicU64>,
+    pub(crate) num_entries_want_have_send_dont_have: GenericCounter<AtomicU64>,
 
     /// Counters for connection events.
-    pub(crate) num_connected: GenericCounter<AtomicI64>,
-    pub(crate) num_disconnected: GenericCounter<AtomicI64>,
+    pub(crate) num_connected: GenericCounter<AtomicU64>,
+    pub(crate) num_disconnected: GenericCounter<AtomicU64>,
 }
 
 impl MetricsByMonitorAndCountry {
@@ -196,11 +194,7 @@ impl MetricsByMonitorAndCountry {
 }
 
 pub(crate) fn run_prometheus(addr: SocketAddr) -> Result<()> {
-    thread::Builder::new()
-        .name("prom-exporter".to_string())
-        .spawn(move || {
-            PrometheusExporter::run(&addr).expect("unable to start server for prometheus");
-        })?;
+    prometheus_exporter::start(addr).context("can not start exporter")?;
 
     Ok(())
 }
