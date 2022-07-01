@@ -18,6 +18,8 @@ use std::io;
 use std::io::{BufRead, BufReader, BufWriter};
 
 fn main() -> Result<()> {
+    logging::set_up_logging()?;
+
     let matches = App::new("IPFS wantlist JSON to CSV converter")
         .about("converts JSON files to CSV files and some other stuff")
         .help(
@@ -33,8 +35,6 @@ fn main() -> Result<()> {
                 .help("the config file to load"),
         )
         .get_matches();
-
-    logging::set_up_logging(false)?;
 
     if !matches.is_present("cfg") {
         println!("{}", matches.usage());

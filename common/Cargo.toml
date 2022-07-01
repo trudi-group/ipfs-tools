@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 log = "^0.4"
-flexi_logger = "^0.15"
+flexi_logger = "0.22"
 failure = "^0.1"
 serde = "1.0.137"
 serde_json = "1.0.81"

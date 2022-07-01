@@ -11,18 +11,18 @@ ipfs-resolver-common = {path = "../common"}
 ipfs_monitoring_plugin_client = {path = "../ipfs-monitoring-plugin-client" }
 failure = "0.1.7"
 log = "0.4.8"
-flexi_logger = "0.15.2"
+flexi_logger = "0.22.5"
 futures-util = "0.3.17"
 reqwest = { version = "0.11", features = ["json","rustls-tls-native-roots"],default-features = false }
-multibase = "0.8.0"
+multibase = "0.9.1"
 chrono = "0.4.11"
 serde = "1.0.137"
 serde_json = "1.0.81"
 tokio = { version = "^1", features = ["rt-multi-thread","macros","sync"] }
-rand = "0.7.3"
-parity-multiaddr = "0.9.0"
+rand = "0.8.5"
+parity-multiaddr = "0.11.2"
 ipfs-api-backend-hyper = {version="0.4",features = ["with-hyper-rustls"],default-features = false}
-cid = "0.5.1"
+cid = "0.8.5"
 http = "0.2.1"
 csv = "1.1.6"
 clap = "2.33.3"

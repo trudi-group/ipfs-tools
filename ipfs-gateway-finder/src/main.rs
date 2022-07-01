@@ -25,7 +25,7 @@ use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    logging::set_up_logging(false)?;
+    logging::set_up_logging()?;
 
     do_probing().await?;
 

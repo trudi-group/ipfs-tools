@@ -9,7 +9,7 @@ use std::{io, panic};
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
-    logging::set_up_logging(false)?;
+    logging::set_up_logging()?;
 
     let mut rdr = BufReader::new(io::stdin());
     let mut s = String::new();

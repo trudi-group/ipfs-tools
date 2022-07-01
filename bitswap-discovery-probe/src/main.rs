@@ -25,7 +25,7 @@ mod config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    logging::set_up_logging(false)?;
+    logging::set_up_logging()?;
 
     // Get current timestamp as an ID for the measurement.
     let measurement_id = chrono::Utc::now().timestamp();
