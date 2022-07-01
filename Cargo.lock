@@ -368,7 +368,7 @@ dependencies = [
  "ipfs-resolver-common",
  "log",
  "multibase 0.8.0",
- "multihash 0.11.4",
+ "multihash 0.16.2",
 ]
 
 [[package]]
