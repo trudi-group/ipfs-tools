@@ -19,29 +19,28 @@ fn group_and_count_cid_by_metadata(
     mut output: &mut impl io::Write,
 ) -> Result<()> {
     let mut rdr = BufReader::new(input);
-    let mut s = String::new();
-
+    let mut buffer = String::new();
     let mut results: HashMap<_, usize> = HashMap::new();
 
-    let h = panic::take_hook();
+    let default_panic_hook = panic::take_hook();
 
     // Set panic hook to suppress warnings (bruh.)
     panic::set_hook(Box::new(|_info| {
         // do nothing
     }));
-    while let Ok(n) = rdr.read_line(&mut s) {
+    while let Ok(n) = rdr.read_line(&mut buffer) {
         if n == 0 {
             // Restore panic hook.
-            panic::set_hook(h);
+            panic::set_hook(default_panic_hook);
             results
                 .into_iter()
                 .try_for_each(|(k, v)| writeln!(&mut output, "{},{}", k, v))?;
             return Ok(());
         }
 
-        debug!("working on {}", s.trim());
+        debug!("working on {}", buffer.trim());
 
-        let res = match do_single(s.trim()) {
+        let res = match do_single(buffer.trim()) {
             Err(_) => "invalid".to_string(),
             Ok(m) => format!(
                 "{:?}:{:?}:{:?}:{}:{}",
@@ -60,13 +59,13 @@ fn group_and_count_cid_by_metadata(
         let entry = results.entry(res.clone()).or_default();
         *entry += 1;
 
-        s.clear();
+        buffer.clear();
     }
     // Restore panic hook.
-    panic::set_hook(h);
+    panic::set_hook(default_panic_hook);
 
     // We only get here if reading from Stdin fails...
-    rdr.read_line(&mut s)?;
+    rdr.read_line(&mut buffer)?;
 
     Ok(())
 }
@@ -80,8 +79,8 @@ struct Metadata {
     hash_len: usize,
 }
 
-fn do_single(s: &str) -> Result<Metadata> {
-    let c = cid::Cid::try_from(s)?;
+fn do_single(line: &str) -> Result<Metadata> {
+    let c = cid::Cid::try_from(line)?;
     if c.version() == cid::Version::V0 {
         return Ok(Metadata {
             base: multibase::Base::Base58Btc,
@@ -95,7 +94,7 @@ fn do_single(s: &str) -> Result<Metadata> {
         });
     }
 
-    let (b, _) = multibase::decode(s)?;
+    let (b, _) = cid::multibase::decode(line)?;
 
     Ok(Metadata {
         base: b,
