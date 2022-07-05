@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 
+mod codec;
+
 use ipfs_resolver_common::{logging, Result};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -29,7 +31,7 @@ fn group_and_count_cid_by_metadata(
         // do nothing
     }));
     while let Ok(n) = rdr.read_line(&mut buffer) {
-        if n == 0 {
+        if n == 0 { //EOF
             // Restore panic hook.
             panic::set_hook(default_panic_hook);
             results
@@ -72,40 +74,29 @@ fn group_and_count_cid_by_metadata(
 
 #[derive(Debug, Clone)]
 struct Metadata {
-    base: multibase::Base,
+    base: cid::multibase::Base,
     version: cid::Version,
-    codec: cid::Codec,
-    hash: Option<multihash::Code>,
+    codec: self::codec::Codec,
+    hash: Option<cid::multihash::Code>,
     hash_len: usize,
 }
 
 fn do_single(line: &str) -> Result<Metadata> {
     let c = cid::Cid::try_from(line)?;
-    if c.version() == cid::Version::V0 {
-        return Ok(Metadata {
-            base: multibase::Base::Base58Btc,
-            version: c.version(),
-            codec: c.codec(),
-            hash: match std::panic::catch_unwind(|| c.hash().algorithm()) {
-                Ok(h) => Some(h),
-                Err(_) => None,
-            },
-            hash_len: c.hash().digest().len(),
-        });
-    }
-
-    let (b, _) = cid::multibase::decode(line)?;
-
-    Ok(Metadata {
-        base: b,
+    return Ok(Metadata {
+        base: if c.version() == cid::Version::V0 {
+            cid::multibase::Base::Base58Btc
+        } else {
+            cid::multibase::decode(line)?.0
+        },
         version: c.version(),
-        codec: c.codec(),
-        hash: match std::panic::catch_unwind(|| c.hash().algorithm()) {
-            Ok(h) => Some(h),
+        codec: codec::Codec::try_from(c.codec())?,
+        hash: match std::panic::catch_unwind(|| c.hash().code()) {
+            Ok(h) => Some(cid::multihash::Code::try_from(h)?),
             Err(_) => None,
         },
         hash_len: c.hash().digest().len(),
-    })
+    });
 }
 
 #[cfg(test)]
