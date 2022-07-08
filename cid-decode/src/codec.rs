@@ -1,4 +1,4 @@
-// Integrated from rust-cid v0.5.1 since they drop support 
+// Integrated from rust-cid v0.5.1 since they drop support
 // for codec in version 0.6.0
 
 use std::convert::TryFrom;

@@ -31,7 +31,8 @@ fn group_and_count_cid_by_metadata(
         // do nothing
     }));
     while let Ok(n) = rdr.read_line(&mut buffer) {
-        if n == 0 { //EOF
+        if n == 0 {
+            //EOF
             // Restore panic hook.
             panic::set_hook(default_panic_hook);
             results
