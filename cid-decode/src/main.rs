@@ -11,7 +11,14 @@ fn main() -> Result<()> {
     dotenv::dotenv().ok();
     logging::set_up_logging()?;
 
-    let mut rdr = BufReader::new(io::stdin());
+    group_and_count_cid_by_metadata(&mut io::stdin(), &mut io::stdout())
+}
+
+fn group_and_count_cid_by_metadata(
+    input: &mut impl io::Read,
+    mut output: &mut impl io::Write,
+) -> Result<()> {
+    let mut rdr = BufReader::new(input);
     let mut s = String::new();
 
     let mut results: HashMap<_, usize> = HashMap::new();
@@ -28,7 +35,7 @@ fn main() -> Result<()> {
             panic::set_hook(h);
             results
                 .into_iter()
-                .for_each(|(k, v)| println!("{},{}", k, v));
+                .try_for_each(|(k, v)| writeln!(&mut output, "{},{}", k, v))?;
             return Ok(());
         }
 
@@ -100,4 +107,100 @@ fn do_single(s: &str) -> Result<Metadata> {
         },
         hash_len: c.hash().digest().len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get_example_metadata() -> Metadata {
+        let example_cid = "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA";
+        do_single(example_cid).unwrap()
+    }
+
+    #[test]
+    fn decode_cid_base() {
+        let m = get_example_metadata();
+        assert_eq!(format!("{:?}", m.base), "Base58Btc")
+    }
+
+    #[test]
+    fn decode_cid_version() {
+        let m = get_example_metadata();
+        assert_eq!(format!("{:?}", m.version), "V1")
+    }
+
+    #[test]
+    fn decode_cid_codec() {
+        let m = get_example_metadata();
+        assert_eq!(format!("{:?}", m.codec), "Raw")
+    }
+
+    #[test]
+    fn decode_cid_hashtype() {
+        let m = get_example_metadata();
+        assert_eq!(format!("{:?}", m.hash.unwrap()), "Sha2_256")
+    }
+
+    #[test]
+    fn decode_cid_hash_len() {
+        let m = get_example_metadata();
+        assert_eq!(format!("{}", m.hash_len), "32")
+    }
+
+    #[test]
+    fn test_count_1_one_cid() {
+        let mut output: Vec<u8> = Vec::new();
+
+        group_and_count_cid_by_metadata(
+            &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\n".as_bytes(),
+            &mut output,
+        )
+        .unwrap();
+
+        let output_counted = output[output.len() - 2];
+
+        assert_eq!(output_counted, b'1');
+    }
+
+    #[test]
+    fn test_count_2_one_cid() {
+        let mut output: Vec<u8> = Vec::new();
+
+        group_and_count_cid_by_metadata(
+            &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\nzb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA".as_bytes(),
+            &mut output,
+        )
+        .unwrap();
+
+        let output_counted = output[output.len() - 2];
+
+        assert_eq!(output_counted, b'2');
+    }
+
+    #[test]
+    fn test_full_one_cid() {
+        let mut output: Vec<u8> = Vec::new();
+
+        group_and_count_cid_by_metadata(
+            &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\n".as_bytes(),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(&output, b"Base58Btc:V1:Raw:Sha2_256:32,1\n")
+    }
+
+    #[test]
+    fn test_full_one_cid_2() {
+        let mut output: Vec<u8> = Vec::new();
+
+        group_and_count_cid_by_metadata(
+            &mut "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR".as_bytes(),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(&output, b"Base58Btc:V0:DagProtobuf:Sha2_256:32,1\n")
+    }
 }
