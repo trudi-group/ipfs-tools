@@ -3,6 +3,7 @@ extern crate log;
 
 mod codec;
 
+use failure::ResultExt;
 use ipfs_resolver_common::{logging, Result};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -30,6 +31,7 @@ fn group_and_count_cid_by_metadata(
     panic::set_hook(Box::new(|_info| {
         // do nothing
     }));
+    let mut line_no = 0;
     while let Ok(n) = rdr.read_line(&mut buffer) {
         if n == 0 {
             //EOF
@@ -40,10 +42,10 @@ fn group_and_count_cid_by_metadata(
                 .try_for_each(|(k, v)| writeln!(&mut output, "{},{}", k, v))?;
             return Ok(());
         }
+        line_no += 1;
+        debug!("working on row {}: ({})", line_no, buffer.trim());
 
-        debug!("working on {}", buffer.trim());
-
-        let res = match do_single(buffer.trim()) {
+        let res = match do_single(buffer.trim(), line_no) {
             Err(_) => "invalid".to_string(),
             Ok(m) => format!(
                 "{:?}:{:?}:{:?}:{}:{}",
@@ -82,18 +84,33 @@ struct Metadata {
     hash_len: usize,
 }
 
-fn do_single(line: &str) -> Result<Metadata> {
-    let c = cid::Cid::try_from(line)?;
+fn do_single(line: &str, line_no: usize) -> Result<Metadata> {
+    let c = cid::Cid::try_from(line).context(format!(
+        "could not parse to cid (row {}: {})",
+        line_no, line
+    ))?;
     return Ok(Metadata {
         base: if c.version() == cid::Version::V0 {
             cid::multibase::Base::Base58Btc
         } else {
-            cid::multibase::decode(line)?.0
+            cid::multibase::decode(line)
+                .context(format!(
+                    "could not decode multibase (row {}: {})",
+                    line_no, line
+                ))?
+                .0
         },
         version: c.version(),
-        codec: codec::Codec::try_from(c.codec())?,
+        codec: codec::Codec::try_from(c.codec()).context(format!(
+            "could not find humanreadable name for multicodec (codec: {}, row {}: {})",
+            c.codec(),
+            line_no,
+            line
+        ))?,
         hash: match std::panic::catch_unwind(|| c.hash().code()) {
-            Ok(h) => Some(cid::multihash::Code::try_from(h)?),
+            Ok(h) => Some(cid::multihash::Code::try_from(h).unwrap()),
+            // Safe unwrap():
+            //since h comes from a cid struct it should always be possible to convert it back to a multihash::Code
             Err(_) => None,
         },
         hash_len: c.hash().digest().len(),
@@ -106,7 +123,7 @@ mod tests {
 
     fn get_example_metadata() -> Metadata {
         let example_cid = "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA";
-        do_single(example_cid).unwrap()
+        do_single(example_cid, 0).unwrap()
     }
 
     #[test]
