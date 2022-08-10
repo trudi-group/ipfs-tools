@@ -13,6 +13,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fs::File;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -101,7 +102,7 @@ async fn do_probing() -> Result<()> {
             Arg::with_name("gateway_list_url")
                 .long("gateway-list")
                 .value_name("URL")
-                .help("The URL of the JSON gateway list to use")
+                .help("The URL of the JSON gateway list to use. Supported schemes are http, https, and file for local data")
                 .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/master/src/gateways.json")
                 .takes_value(true),
         )
@@ -158,13 +159,29 @@ async fn do_probing() -> Result<()> {
         "getting list of gateways from {}...",
         gateway_list_url.as_str()
     );
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
 
-    let gateway_list_resp = client.get(gateway_list_url).send().await?;
-    let gateway_list: Vec<String> = gateway_list_resp.json().await?;
-    info!("got {} gateways", gateway_list.len());
+    let gateway_list: Vec<String> = match gateway_list_url.scheme() {
+        "file" => {
+            let f = File::open(gateway_list_url.path()).context("unable to open file")?;
+            serde_json::from_reader(f).context("unable to deserialize gateway list")?
+        }
+        "http" | "https" => {
+            let gateway_list_resp = reqwest::get(gateway_list_url)
+                .await
+                .context("unable to download gateway list")?;
+            gateway_list_resp
+                .json()
+                .await
+                .context("unable to deserialize gateway list")?
+        }
+        _ => {
+            return Err(err_msg(format!(
+                "unsupported scheme: {}",
+                gateway_list_url.scheme()
+            )))
+        }
+    };
+    info!("loaded {} gateways", gateway_list.len());
     debug!("got gateways: {:?}", gateway_list);
 
     // TODO check for duplicates? We assume there are none in our algorithms...
