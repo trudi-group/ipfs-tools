@@ -1,10 +1,13 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
-mod codec;
+mod multicodecs;
 
 use failure::ResultExt;
 use ipfs_resolver_common::{logging, Result};
+use multicodecs::Tag;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{BufRead, BufReader};
@@ -48,12 +51,12 @@ fn group_and_count_cid_by_metadata(
         let res = match do_single(buffer.trim(), line_no) {
             Err(_) => "invalid".to_string(),
             Ok(m) => format!(
-                "{:?}:{:?}:{:?}:{}:{}",
+                "{:?}:{:?}:{}:{}:{}",
                 m.base,
                 m.version,
                 m.codec,
                 if let Some(h) = m.hash {
-                    format!("{:?}", h)
+                    format!("{}", h)
                 } else {
                     "invalid".to_string()
                 },
@@ -79,8 +82,8 @@ fn group_and_count_cid_by_metadata(
 struct Metadata {
     base: cid::multibase::Base,
     version: cid::Version,
-    codec: self::codec::Codec,
-    hash: Option<cid::multihash::Code>,
+    codec: &'static str,
+    hash: Option<&'static str>,
     hash_len: usize,
 }
 
@@ -101,16 +104,28 @@ fn do_single(line: &str, line_no: usize) -> Result<Metadata> {
                 .0
         },
         version: c.version(),
-        codec: codec::Codec::try_from(c.codec()).context(format!(
-            "could not find humanreadable name for multicodec (codec: {}, row {}: {})",
-            c.codec(),
-            line_no,
-            line
-        ))?,
+        codec: multicodecs::MULTICODEC_TABLE
+            .get(c.codec())
+            .log_unknown_multicodec(line_no, line)
+            .check_tag_get_name(Tag::Ipld)
+            .context(format!(
+                "Error parsing Ipld-code (codec: {}, row {}: {})",
+                c.codec(),
+                line_no,
+                line
+            ))?,
         hash: match std::panic::catch_unwind(|| c.hash().code()) {
-            Ok(h) => Some(cid::multihash::Code::try_from(h).unwrap()),
-            // Safe unwrap():
-            //since h comes from a cid struct it should always be possible to convert it back to a multihash::Code
+            //code can give any u64
+            Ok(h) => Some(
+                multicodecs::MULTICODEC_TABLE
+                    .get(h)
+                    .log_unknown_multicodec(line_no, line)
+                    .check_tag_get_name(Tag::Multihash)
+                    .context(format!(
+                        "Error parsing multihash-code (code: {}, row {}: {})",
+                        h, line_no, line
+                    ))?,
+            ),
             Err(_) => None,
         },
         hash_len: c.hash().digest().len(),
@@ -141,13 +156,13 @@ mod tests {
     #[test]
     fn decode_cid_codec() {
         let m = get_example_metadata();
-        assert_eq!(format!("{:?}", m.codec), "Raw")
+        assert_eq!(m.codec, "raw")
     }
 
     #[test]
     fn decode_cid_hashtype() {
         let m = get_example_metadata();
-        assert_eq!(format!("{:?}", m.hash.unwrap()), "Sha2_256")
+        assert_eq!(m.hash.unwrap(), "sha2-256")
     }
 
     #[test]
@@ -196,7 +211,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(&output, b"Base58Btc:V1:Raw:Sha2_256:32,1\n")
+        assert_eq!(&output, b"Base58Btc:V1:raw:sha2-256:32,1\n")
     }
 
     #[test]
@@ -209,6 +224,6 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(&output, b"Base58Btc:V0:DagProtobuf:Sha2_256:32,1\n")
+        assert_eq!(&output, b"Base58Btc:V0:dag-pb:sha2-256:32,1\n")
     }
 }
