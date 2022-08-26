@@ -5,17 +5,21 @@ extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
 
+use celes::Country;
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
+use prom::Metrics;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, path};
 use tokio::net::TcpStream;
 
 use crate::config::Config;
+use crate::prom::OriginType;
 use ipfs_monitoring_plugin_client::tcp::{
     EventType, MonitoringClient, BLOCK_PRESENCE_TYPE_DONT_HAVE, BLOCK_PRESENCE_TYPE_HAVE,
 };
@@ -127,8 +131,7 @@ async fn run_with_config(cfg: Config) -> Result<()> {
                 let addr = c.address;
 
                 // Create metrics for a few popular countries ahead of time.
-                let mut metrics_by_country =
-                    prom::MetricsByMonitorAndCountry::create_basic_set(&name);
+                let mut metrics_by_country = prom::Metrics::create_basic_set(&name);
 
                 loop {
                     let country_db = country_db.clone();
@@ -154,7 +157,7 @@ async fn run_with_config(cfg: Config) -> Result<()> {
 }
 
 async fn connect_and_receive(
-    metrics_by_country: &mut HashMap<String, prom::MetricsByMonitorAndCountry>,
+    metrics_by_country: &mut HashMap<(Country, OriginType), Metrics>,
     monitor_name: &str,
     address: &str,
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
@@ -224,13 +227,15 @@ async fn connect_and_receive(
                     monitor_name, origin_ip, origin_ma
                 );
 
-                let origin_country = match origin_ip {
+                let origin_country: celes::Country = match origin_ip {
                     None => prom::COUNTRY_NAME_UNKNOWN,
                     Some(ip) => match country_db.lookup::<maxminddb::geoip2::Country>(ip) {
                         Ok(country) => country
                             .country
                             .as_ref()
                             .map(|o| o.iso_code)
+                            .flatten()
+                            .map(|iso_code| celes::Country::from_str(iso_code).ok())
                             .flatten()
                             .or_else(|| {
                                 debug!(
@@ -260,27 +265,25 @@ async fn connect_and_receive(
                     monitor_name, origin_ip, origin_country
                 );
 
-                let metrics = match metrics_by_country.get(origin_country) {
+                let origin_type = if known_gateways.contains(&event.peer) {
+                    OriginType::Gateway
+                } else {
+                    OriginType::Peer
+                };
+
+                let metrics = match metrics_by_country.get(&(origin_country, origin_type)) {
                     None => {
                         debug!(
                             "{}: country metric for {} missing, creating on the fly...",
                             monitor_name, origin_country
                         );
-                        let new_metrics =
-                            match prom::MetricsByMonitorAndCountry::new_from_iso3166_alpha2(
-                                monitor_name,
-                                origin_country,
-                            ) {
-                                Ok(new_metrics) => new_metrics,
-                                Err(e) => {
-                                    error!("unable to create country metric for country {} on the fly: {:?}",origin_country,e);
-                                    continue;
-                                }
-                            };
+                        let new_metrics = Metrics::new_for_country(monitor_name, origin_country);
                         // We know that the origin_country value is safe, since we were able to create metrics with it.
-                        metrics_by_country.insert(origin_country.to_string(), new_metrics);
+                        metrics_by_country.insert((origin_country, origin_type), new_metrics);
                         // We know this is safe since we just inserted it.
-                        metrics_by_country.get(origin_country).unwrap()
+                        metrics_by_country
+                            .get(&(origin_country, origin_type))
+                            .unwrap()
                     }
                     Some(m) => m,
                 };

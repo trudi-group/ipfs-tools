@@ -28,4 +28,4 @@ maxminddb = "0.23.0"
 multiaddr = "0.14"
 
 # ISO 3166-1 countries.
-celes = "2.2.0"
+celes = "2.4.0"
