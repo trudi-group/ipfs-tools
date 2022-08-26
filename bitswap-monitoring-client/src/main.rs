@@ -8,20 +8,24 @@ extern crate prometheus;
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
-use std::collections::HashMap;
+use prom::{Geolocation, Metrics};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, path};
 use tokio::net::TcpStream;
+use tokio::sync::RwLock;
 
 use crate::config::Config;
+use crate::prom::{MetricsKey, PublicGatewayStatus};
 use ipfs_monitoring_plugin_client::tcp::{
     EventType, MonitoringClient, BLOCK_PRESENCE_TYPE_DONT_HAVE, BLOCK_PRESENCE_TYPE_HAVE,
 };
 use ipfs_resolver_common::{logging, wantlist, Result};
 
 mod config;
+mod gateways;
 mod prom;
 
 #[tokio::main]
@@ -98,11 +102,32 @@ fn read_geoip_database(cfg: Config) -> Result<maxminddb::Reader<Vec<u8>>> {
 }
 
 async fn run_with_config(cfg: Config) -> Result<()> {
-    // Read GeoIP databases
+    // Read GeoIP databases.
     info!("reading MaxMind GeoLite2 database...");
     let country_db = read_geoip_database(cfg.clone()).context("unable to open GeoIP databases")?;
     let country_db = Arc::new(country_db);
     info!("successfully read MaxMind database");
+
+    // Read list of public gateway IDs.
+    let known_gateways = Arc::new(RwLock::new(HashSet::new()));
+    match cfg.gateway_file_path {
+        Some(path) => {
+            debug!("loading gateway IDs from {}", path);
+            gateways::update_known_gateways(&path, &known_gateways)
+                .await
+                .context("unable to load gateway IDs")?;
+            info!("loaded {} gateway IDs", known_gateways.read().await.len());
+
+            debug!("starting loop to handle SIGUSR1");
+            let known_gateways = known_gateways.clone();
+            gateways::set_up_signal_handling(path.clone(), known_gateways)
+                .context("unable to set up signal handling to reload gateway IDs")?;
+            info!("started signal handler. Send SIGUSR1 to reload list of gateways.");
+        }
+        None => {
+            info!("no gateway file provided, all traffic will be logged as non-gateway")
+        }
+    }
 
     // Set up prometheus
     let prometheus_address = cfg
@@ -121,25 +146,30 @@ async fn run_with_config(cfg: Config) -> Result<()> {
         .into_iter()
         .map(|c| {
             let country_db = country_db.clone();
+            let known_gateways = known_gateways.clone();
 
             tokio::spawn(async move {
                 let name = c.name.clone();
                 let addr = c.address;
 
                 // Create metrics for a few popular countries ahead of time.
-                let mut metrics_by_country =
-                    prom::MetricsByMonitorAndCountry::create_basic_set(&name);
+                let mut metrics_by_country = Metrics::create_basic_set(&name);
 
                 loop {
                     let country_db = country_db.clone();
-                    let res =
-                        connect_and_receive(&mut metrics_by_country, &name, &addr, country_db)
-                            .await;
+                    let res = connect_and_receive(
+                        &mut metrics_by_country,
+                        &name,
+                        &addr,
+                        country_db,
+                        &known_gateways,
+                    )
+                    .await;
 
                     info!("monitor {}: result: {:?}", name, res);
 
                     info!("monitor {}: sleeping for one second", name);
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             })
         })
@@ -154,10 +184,11 @@ async fn run_with_config(cfg: Config) -> Result<()> {
 }
 
 async fn connect_and_receive(
-    metrics_by_country: &mut HashMap<String, prom::MetricsByMonitorAndCountry>,
+    metrics_by_country: &mut prom::MetricsMap,
     monitor_name: &str,
     address: &str,
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
+    known_gateways: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     debug!("connecting to monitor {} at {}...", monitor_name, address);
     let conn = TcpStream::connect(address).await?;
@@ -224,20 +255,21 @@ async fn connect_and_receive(
                     monitor_name, origin_ip, origin_ma
                 );
 
-                let origin_country = match origin_ip {
-                    None => prom::COUNTRY_NAME_UNKNOWN,
+                let origin_country: Geolocation = match origin_ip {
+                    None => Geolocation::Unknown,
                     Some(ip) => match country_db.lookup::<maxminddb::geoip2::Country>(ip) {
                         Ok(country) => country
                             .country
                             .as_ref()
                             .map(|o| o.iso_code)
                             .flatten()
+                            .map(|iso_code| Geolocation::Alpha2(iso_code.to_string()))
                             .or_else(|| {
                                 debug!(
                                     "Country lookup for IP {} has no country: {:?}",
                                     ip, country
                                 );
-                                Some(prom::COUNTRY_NAME_UNKNOWN)
+                                Some(Geolocation::Unknown)
                             })
                             .unwrap(),
                         Err(err) => match err {
@@ -246,41 +278,59 @@ async fn connect_and_receive(
                                     "{}: IP {:?} not found in MaxMind database: {}",
                                     monitor_name, ip, e
                                 );
-                                prom::COUNTRY_NAME_UNKNOWN
+                                Geolocation::Unknown
                             }
                             _ => {
                                 error!("unable to lookup country for IP {} (from multiaddress {:?}): {:?}",ip,origin_ma,err);
-                                prom::COUNTRY_NAME_ERROR
+                                Geolocation::Error
                             }
                         },
                     },
                 };
                 debug!(
-                    "{}: determined origin of IP {:?} to be {}",
+                    "{}: determined origin of IP {:?} to be {:?}",
                     monitor_name, origin_ip, origin_country
                 );
 
-                let metrics = match metrics_by_country.get(origin_country) {
+                let origin_type = if known_gateways.read().await.contains(&event.peer) {
+                    PublicGatewayStatus::Gateway
+                } else {
+                    PublicGatewayStatus::NonGateway
+                };
+
+                let metrics_key = MetricsKey {
+                    geo_origin: origin_country,
+                    overlay_origin: origin_type,
+                };
+
+                let metrics = match metrics_by_country.get(&metrics_key) {
                     None => {
                         debug!(
-                            "{}: country metric for {} missing, creating on the fly...",
-                            monitor_name, origin_country
+                            "{}: metrics for {:?} missing, creating on the fly...",
+                            monitor_name, metrics_key
                         );
-                        let new_metrics =
-                            match prom::MetricsByMonitorAndCountry::new_from_iso3166_alpha2(
-                                monitor_name,
-                                origin_country,
-                            ) {
-                                Ok(new_metrics) => new_metrics,
-                                Err(e) => {
-                                    error!("unable to create country metric for country {} on the fly: {:?}",origin_country,e);
-                                    continue;
-                                }
-                            };
-                        // We know that the origin_country value is safe, since we were able to create metrics with it.
-                        metrics_by_country.insert(origin_country.to_string(), new_metrics);
-                        // We know this is safe since we just inserted it.
-                        metrics_by_country.get(origin_country).unwrap()
+                        match Metrics::new_for_key(monitor_name, &metrics_key) {
+                            Ok(new_metrics) => {
+                                // We know that the metrics_key value is safe, since we were able to create metrics with it.
+                                metrics_by_country.insert(metrics_key.clone(), new_metrics);
+                                // We know this is safe since we just inserted it.
+                                metrics_by_country.get(&metrics_key).unwrap()
+                            }
+                            Err(e) => {
+                                error!(
+                                    "unable to create metrics for country {:?} on the fly: {:?}",
+                                    metrics_key, e
+                                );
+                                // We use the Error country instead.
+                                // We know this is safe since that country is always present in the map.
+                                metrics_by_country
+                                    .get(&MetricsKey {
+                                        geo_origin: Geolocation::Error,
+                                        overlay_origin: metrics_key.overlay_origin,
+                                    })
+                                    .unwrap()
+                            }
+                        }
                     }
                     Some(m) => m,
                 };
