@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 pub struct Multicodec {
     name: &'static str,
-    pub tag: Tag,
+    tag: Tag,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -23,7 +23,6 @@ pub enum Tag {
     Softhash,
     Transport,
     Zeroxcert,
-    Unkown,
 }
 
 impl Multicodec {
@@ -45,26 +44,9 @@ impl Multicodec {
                 "softhash" => Tag::Softhash,
                 "transport" => Tag::Transport,
                 "zeroxcert" => Tag::Zeroxcert,
-                _ => Tag::Unkown,
+                _ => panic!("Found unkown type in MULTICODECTABLE"),
             },
         }
-    }
-
-    pub fn check_tag_get_name(&self, tag: Tag) -> Result<&'static str> {
-        if tag != self.tag {
-            return Err(err_msg(format!(
-                "Multicodec {} has type {:?} expected to have type {:?}",
-                self.name, self.tag, tag
-            )));
-        }
-        Ok(self.name)
-    }
-
-    pub fn log_unknown_multicodec(&self, line_no: usize, line: &str) -> &Self {
-        if UNKNOWN_MULTICODEC.tag == self.tag {
-            warn!("Unknown Multicodec found (row {}: {})", line_no, line)
-        }
-        self
     }
 }
 
@@ -73,22 +55,26 @@ pub struct MulticodecTable {
 }
 
 impl MulticodecTable {
-    pub fn get(&self, codec: u64) -> &'static Multicodec {
+    pub fn get_name_with_checked_tag(&self, codec: u64, tag: Tag) -> Option<Result<&'static str>> {
         match self.table.get(&codec) {
-            Some(mc) => &mc,
-            None => &UNKNOWN_MULTICODEC,
+            None => None,
+            Some(mc) => {
+                if mc.tag == tag {
+                    Some(Ok(mc.name))
+                } else {
+                    Some(Err(err_msg(format!(
+                        "Expected multicodec {} to have {:?}-tag, found {:?} tag",
+                        mc.name, mc.tag, tag
+                    ))))
+                }
+            }
         }
     }
 }
 
 lazy_static! {
     pub static ref MULTICODEC_TABLE: MulticodecTable =  MulticodecTable { table: &TABLE } ;
-    static ref UNKNOWN_MULTICODEC: Multicodec = {
-        Multicodec {
-            name: "unknown",
-            tag: Tag::Unkown,
-        }
-    };
+
     // You can generate the next section with this simple oneliner if table.csv is the multicodec table
     // from https://github.com/multiformats/multicodec/blob/master/table.csv
     // sed 's# ##g' table.csv | awk -F , 'NR>1{print "("$3",Multicodec::new(\""$1"\", \""$2"\")),"}'

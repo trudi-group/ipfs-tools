@@ -5,7 +5,7 @@ extern crate lazy_static;
 
 mod multicodecs;
 
-use failure::ResultExt;
+use failure::err_msg;
 use ipfs_resolver_common::{logging, Result};
 use multicodecs::Tag;
 use std::collections::HashMap;
@@ -17,12 +17,13 @@ fn main() -> Result<()> {
     dotenv::dotenv().ok();
     logging::set_up_logging()?;
 
-    group_and_count_cid_by_metadata(&mut io::stdin(), &mut io::stdout())
+    group_and_count_cid_by_metadata(&mut io::stdin(), &mut io::stdout(), &mut io::stderr())
 }
 
 fn group_and_count_cid_by_metadata(
     input: &mut impl io::Read,
     mut output: &mut impl io::Write,
+    mut error_output: &mut impl io::Write,
 ) -> Result<()> {
     let mut rdr = BufReader::new(input);
     let mut buffer = String::new();
@@ -48,20 +49,23 @@ fn group_and_count_cid_by_metadata(
         line_no += 1;
         debug!("working on row {}: ({})", line_no, buffer.trim());
 
-        let res = match do_single(buffer.trim(), line_no) {
-            Err(_) => "invalid".to_string(),
+        let res = match do_single(buffer.trim()) {
             Ok(m) => format!(
                 "{:?}:{:?}:{}:{}:{}",
-                m.base,
-                m.version,
-                m.codec,
-                if let Some(h) = m.hash {
-                    format!("{}", h)
-                } else {
-                    "invalid".to_string()
-                },
-                m.hash_len
+                m.base, m.version, m.codec, m.hash, m.hash_len
             ),
+            Err(err) => {
+                // If we get an error while parsing the input we log a warning to stderr and ignore the corresponding line
+                writeln!(
+                    &mut error_output,
+                    "Ignoring line {}: {:?} (Line was {})",
+                    line_no,
+                    err,
+                    buffer.trim()
+                )?;
+                buffer.clear();
+                continue;
+            }
         };
 
         let entry = results.entry(res.clone()).or_default();
@@ -83,51 +87,34 @@ struct Metadata {
     base: cid::multibase::Base,
     version: cid::Version,
     codec: &'static str,
-    hash: Option<&'static str>,
+    hash: &'static str,
     hash_len: usize,
 }
 
-fn do_single(line: &str, line_no: usize) -> Result<Metadata> {
-    let c = cid::Cid::try_from(line).context(format!(
-        "could not parse to cid (row {}: {})",
-        line_no, line
-    ))?;
+fn do_single(line: &str) -> Result<Metadata> {
+    let c = cid::Cid::try_from(line)?;
+
+    //TODO: If we can remove the panic catch this can go inside the
+    //returnblock and the match matchstatement can be deleted.
+    let hash = match std::panic::catch_unwind(|| c.hash().code()) {
+        //code can give any u64
+        Ok(h) => multicodecs::MULTICODEC_TABLE
+            .get_name_with_checked_tag(h, Tag::Multihash)
+            .ok_or(err_msg("unknown multicodec"))??,
+        Err(_) => return Err(err_msg("Could not parse hash")),
+    };
+
     return Ok(Metadata {
         base: if c.version() == cid::Version::V0 {
             cid::multibase::Base::Base58Btc
         } else {
-            cid::multibase::decode(line)
-                .context(format!(
-                    "could not decode multibase (row {}: {})",
-                    line_no, line
-                ))?
-                .0
+            cid::multibase::decode(line)?.0
         },
         version: c.version(),
         codec: multicodecs::MULTICODEC_TABLE
-            .get(c.codec())
-            .log_unknown_multicodec(line_no, line)
-            .check_tag_get_name(Tag::Ipld)
-            .context(format!(
-                "Error parsing Ipld-code (codec: {}, row {}: {})",
-                c.codec(),
-                line_no,
-                line
-            ))?,
-        hash: match std::panic::catch_unwind(|| c.hash().code()) {
-            //code can give any u64
-            Ok(h) => Some(
-                multicodecs::MULTICODEC_TABLE
-                    .get(h)
-                    .log_unknown_multicodec(line_no, line)
-                    .check_tag_get_name(Tag::Multihash)
-                    .context(format!(
-                        "Error parsing multihash-code (code: {}, row {}: {})",
-                        h, line_no, line
-                    ))?,
-            ),
-            Err(_) => None,
-        },
+            .get_name_with_checked_tag(c.codec(), Tag::Ipld)
+            .ok_or(err_msg("unknown multicodec"))??,
+        hash,
         hash_len: c.hash().digest().len(),
     });
 }
@@ -138,7 +125,7 @@ mod tests {
 
     fn get_example_metadata() -> Metadata {
         let example_cid = "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA";
-        do_single(example_cid, 0).unwrap()
+        do_single(example_cid).unwrap()
     }
 
     #[test]
@@ -162,7 +149,7 @@ mod tests {
     #[test]
     fn decode_cid_hashtype() {
         let m = get_example_metadata();
-        assert_eq!(m.hash.unwrap(), "sha2-256")
+        assert_eq!(m.hash, "sha2-256")
     }
 
     #[test]
@@ -178,6 +165,7 @@ mod tests {
         group_and_count_cid_by_metadata(
             &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\n".as_bytes(),
             &mut output,
+            &mut io::stderr(),
         )
         .unwrap();
 
@@ -193,6 +181,7 @@ mod tests {
         group_and_count_cid_by_metadata(
             &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\nzb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA".as_bytes(),
             &mut output,
+            &mut io::stderr()
         )
         .unwrap();
 
@@ -208,6 +197,7 @@ mod tests {
         group_and_count_cid_by_metadata(
             &mut "zb2rhe5P4gXftAwvA4eXQ5HJwsER2owDyS9sKaQRRVQPn93bA\n".as_bytes(),
             &mut output,
+            &mut io::stderr(),
         )
         .unwrap();
 
@@ -221,6 +211,7 @@ mod tests {
         group_and_count_cid_by_metadata(
             &mut "QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR".as_bytes(),
             &mut output,
+            &mut io::stderr(),
         )
         .unwrap();
 
