@@ -131,7 +131,7 @@ name = "bitswap-discovery-probe"
 version = "0.2.0"
 dependencies = [
  "chrono",
- "cid 0.8.5",
+ "cid",
  "clap",
  "csv",
  "failure",
@@ -335,20 +335,9 @@ checksum = "fff857943da45f546682664a79488be82e69e43c1a7a2307679ab9afb3a66d2e"
 
 [[package]]
 name = "cid"
-version = "0.5.1"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8709d481fb78b9808f34a1b4b4fadd08a15a0971052c18bc2b751faefaed595e"
-dependencies = [
- "multibase 0.8.0",
- "multihash 0.11.4",
- "unsigned-varint 0.3.3",
-]
-
-[[package]]
-name = "cid"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc949bff6704880faf064c42a4854032ab07bfcf3a4fcb82a57470acededb69c"
+checksum = "f6ed9c8b2d17acb8110c46f1da5bf4a696d745e1474a16db0cd2b49cd0249bf2"
 dependencies = [
  "core2",
  "multibase 0.9.1",
@@ -361,7 +350,7 @@ dependencies = [
 name = "cid-decode"
 version = "0.2.0"
 dependencies = [
- "cid 0.5.1",
+ "cid",
  "dotenv",
  "failure",
  "flexi_logger",
@@ -976,7 +965,7 @@ name = "ipfs-gateway-finder"
 version = "0.3.0"
 dependencies = [
  "chrono",
- "cid 0.8.5",
+ "cid",
  "clap",
  "csv",
  "failure",
@@ -2287,12 +2276,6 @@ name = "unsafe-libyaml"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9dc1c637311091be28e5d462c07db78081e5828da80ba22605c81c4ad6f7f813"
-
-[[package]]
-name = "unsigned-varint"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f67332660eb59a6f1eb24ff1220c9e8d01738a8503c6002e30bcfe4bd9f2b4a9"
 
 [[package]]
 name = "unsigned-varint"
