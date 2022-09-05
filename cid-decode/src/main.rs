@@ -10,8 +10,8 @@ use ipfs_resolver_common::{logging, Result};
 use multicodecs::Tag;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::io;
 use std::io::{BufRead, BufReader};
-use std::{io, panic};
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
@@ -29,18 +29,10 @@ fn group_and_count_cid_by_metadata(
     let mut buffer = String::new();
     let mut results: HashMap<_, usize> = HashMap::new();
 
-    let default_panic_hook = panic::take_hook();
-
-    // Set panic hook to suppress warnings (bruh.)
-    panic::set_hook(Box::new(|_info| {
-        // do nothing
-    }));
     let mut line_no = 0;
     while let Ok(n) = rdr.read_line(&mut buffer) {
         if n == 0 {
             //EOF
-            // Restore panic hook.
-            panic::set_hook(default_panic_hook);
             results
                 .into_iter()
                 .try_for_each(|(k, v)| writeln!(&mut output, "{},{}", k, v))?;
@@ -73,9 +65,6 @@ fn group_and_count_cid_by_metadata(
 
         buffer.clear();
     }
-    // Restore panic hook.
-    panic::set_hook(default_panic_hook);
-
     // We only get here if reading from Stdin fails...
     rdr.read_line(&mut buffer)?;
 
@@ -94,16 +83,6 @@ struct Metadata {
 fn do_single(line: &str) -> Result<Metadata> {
     let c = cid::Cid::try_from(line)?;
 
-    //TODO: If we can remove the panic catch this can go inside the
-    //returnblock and the match matchstatement can be deleted.
-    let hash = match std::panic::catch_unwind(|| c.hash().code()) {
-        //code can give any u64
-        Ok(h) => multicodecs::MULTICODEC_TABLE
-            .get_name_with_checked_tag(h, Tag::Multihash)
-            .ok_or(err_msg("unknown multicodec"))??,
-        Err(_) => return Err(err_msg("Could not parse hash")),
-    };
-
     return Ok(Metadata {
         base: if c.version() == cid::Version::V0 {
             cid::multibase::Base::Base58Btc
@@ -113,8 +92,13 @@ fn do_single(line: &str) -> Result<Metadata> {
         version: c.version(),
         codec: multicodecs::MULTICODEC_TABLE
             .get_name_with_checked_tag(c.codec(), Tag::Ipld)
-            .ok_or(err_msg("unknown multicodec"))??,
-        hash,
+            .ok_or(err_msg(format!("unknown multicodec: {:#06x}", c.codec())))??,
+        hash: multicodecs::MULTICODEC_TABLE
+            .get_name_with_checked_tag(c.hash().code(), Tag::Multihash)
+            .ok_or(err_msg(format!(
+                "unknown multihash: {:#06x}",
+                c.hash().code()
+            )))??,
         hash_len: c.hash().digest().len(),
     });
 }
