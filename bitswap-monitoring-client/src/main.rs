@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, path};
 use tokio::net::TcpStream;
+use tokio::sync::RwLock;
 
 use crate::config::Config;
 use crate::prom::OriginType;
@@ -111,14 +112,16 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     info!("successfully read MaxMind database");
 
     //Initialize known_gateway_set
-    let mut known_gateways = HashSet::new();
+    let known_gateways = Arc::new(RwLock::new(HashSet::new()));
     match cfg.gateway_file_path {
         Some(path) => {
             info!("reading gateways-file from {}", path);
-            update_known_gateways(&path, &mut known_gateways).context(format!(
-                "Could not initialize gateways failed to read {}",
-                path
-            ))?;
+            update_known_gateways(&path, &known_gateways)
+                .await
+                .context(format!(
+                    "Could not initialize gateways failed to read {}",
+                    path
+                ))?;
         }
         None => {
             info!("No gateway-file provided. All traffic will be logged as non-gateway-traffic")
@@ -179,11 +182,14 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     Ok(())
 }
 
-fn update_known_gateways(
+async fn update_known_gateways(
     gateway_data_path: &String,
-    known_gateways: &mut HashSet<String>,
+    known_gateways: &Arc<tokio::sync::RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let file = File::open(gateway_data_path)?;
+
+    let mut new_gateways = HashSet::new();
+
     let mut reader = BufReader::new(file);
     let mut line = String::new();
 
@@ -193,9 +199,12 @@ fn update_known_gateways(
             break;
         }
 
-        known_gateways.insert(line.clone());
+        new_gateways.insert(line.clone());
         line.clear();
     }
+
+    let mut known_gateways = known_gateways.write().await;
+    known_gateways.extend(new_gateways);
 
     Ok(())
 }
@@ -205,7 +214,7 @@ async fn connect_and_receive(
     monitor_name: &str,
     address: &str,
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
-    known_gateways: &HashSet<String>,
+    known_gateways: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     debug!("connecting to monitor {} at {}...", monitor_name, address);
     let conn = TcpStream::connect(address).await?;
@@ -310,7 +319,7 @@ async fn connect_and_receive(
                     monitor_name, origin_ip, origin_country
                 );
 
-                let origin_type = if known_gateways.contains(&event.peer) {
+                let origin_type = if known_gateways.read().await.contains(&event.peer) {
                     OriginType::Gateway
                 } else {
                     OriginType::Peer
