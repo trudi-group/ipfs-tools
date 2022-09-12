@@ -7,6 +7,11 @@ prometheus_address: "0.0.0.0:8088"
 # Defaults to /usr/local/share/GeoIP if unspecified.
 #geoip_database_path: "/usr/local/share/GeoIP"
 
+# Specifies where the gateway file is located.
+# In the gateway file every line should be the id of an ipfs-gateway.
+# If not provided all traffic will be logged as non-gateway-traffic.
+gateway_file_path: "/usr/local/share/gateways.txt"
+
 # List of monitors to connect to.
 monitors:
   - name: "local"

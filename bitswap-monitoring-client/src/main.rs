@@ -10,7 +10,9 @@ use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
 use prom::Metrics;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -108,6 +110,21 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     let country_db = Arc::new(country_db);
     info!("successfully read MaxMind database");
 
+    //Initialize known_gateway_set
+    let mut known_gateways = HashSet::new();
+    match cfg.gateway_file_path {
+        Some(path) => {
+            info!("reading gateways-file from {}", path);
+            update_known_gateways(&path, &mut known_gateways).context(format!(
+                "Could not initialize gateways failed to read {}",
+                path
+            ))?;
+        }
+        None => {
+            info!("No gateway-file provided. All traffic will be logged as non-gateway-traffic")
+        }
+    }
+
     // Set up prometheus
     let prometheus_address = cfg
         .prometheus_address
@@ -125,6 +142,7 @@ async fn run_with_config(cfg: Config) -> Result<()> {
         .into_iter()
         .map(|c| {
             let country_db = country_db.clone();
+            let known_gateways = known_gateways.clone();
 
             tokio::spawn(async move {
                 let name = c.name.clone();
@@ -135,9 +153,14 @@ async fn run_with_config(cfg: Config) -> Result<()> {
 
                 loop {
                     let country_db = country_db.clone();
-                    let res =
-                        connect_and_receive(&mut metrics_by_country, &name, &addr, country_db)
-                            .await;
+                    let res = connect_and_receive(
+                        &mut metrics_by_country,
+                        &name,
+                        &addr,
+                        country_db,
+                        &known_gateways,
+                    )
+                    .await;
 
                     info!("monitor {}: result: {:?}", name, res);
 
@@ -156,11 +179,33 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     Ok(())
 }
 
+fn update_known_gateways(
+    gateway_data_path: &String,
+    known_gateways: &mut HashSet<String>,
+) -> Result<()> {
+    let file = File::open(gateway_data_path)?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+
+    while let Ok(n) = reader.read_line(&mut line) {
+        if n == 0 {
+            //EOF
+            break;
+        }
+
+        known_gateways.insert(line.clone());
+        line.clear();
+    }
+
+    Ok(())
+}
+
 async fn connect_and_receive(
     metrics_by_country: &mut HashMap<(Country, OriginType), Metrics>,
     monitor_name: &str,
     address: &str,
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
+    known_gateways: &HashSet<String>,
 ) -> Result<()> {
     debug!("connecting to monitor {} at {}...", monitor_name, address);
     let conn = TcpStream::connect(address).await?;

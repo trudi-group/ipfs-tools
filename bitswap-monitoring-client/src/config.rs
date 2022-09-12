@@ -18,10 +18,20 @@ pub(crate) struct Config {
     /// Defaults to /usr/local/share/GeoIP if unspecified.
     #[serde(default = "default_geoip_database_path")]
     pub(crate) geoip_database_path: String,
+
+    /// Specifies where the gateway file is located.
+    /// In the gateway file every line should be the id of an ipfs-gateway.
+    /// If not provided all traffic will be logged as non-gateway-traffic.
+    #[serde(default = "default_gateway_file_path")]
+    pub(crate) gateway_file_path: Option<String>,
 }
 
 fn default_geoip_database_path() -> String {
     "/usr/local/share/GeoIP".to_string()
+}
+
+fn default_gateway_file_path() -> Option<String> {
+    None
 }
 
 /// Configuration for a single monitor to connect to.
