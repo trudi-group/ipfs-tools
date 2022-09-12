@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, path};
 use tokio::net::TcpStream;
+use tokio::signal::unix::{signal, Signal, SignalKind};
 use tokio::sync::RwLock;
 
 use crate::config::Config;
@@ -119,9 +120,18 @@ async fn run_with_config(cfg: Config) -> Result<()> {
             update_known_gateways(&path, &known_gateways)
                 .await
                 .context(format!(
-                    "Could not initialize gateways failed to read {}",
+                    "could not initialize gateways, failed to read {}",
                     path
                 ))?;
+
+            debug!("starting loop to handle SIGUSR1");
+            let known_gateways = known_gateways.clone();
+            let mut stream =
+                signal(SignalKind::user_defined1()).context("failed to get SIGUSR1-stream")?;
+            tokio::spawn(async move {
+                signal_handler_update_gateways(&mut stream, &path, &known_gateways).await
+            });
+            info!("started loop to handle SIGUSR1");
         }
         None => {
             info!("No gateway-file provided. All traffic will be logged as non-gateway-traffic")
@@ -182,9 +192,39 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     Ok(())
 }
 
+async fn signal_handler_update_gateways(
+    signal_stream: &mut Signal,
+    gateway_data_path: &String,
+    known_gateways: &Arc<RwLock<HashSet<String>>>,
+) {
+    while let Some(_) = signal_stream.recv().await {
+        info!("SIGUSR1 recived. Try to update known_gateways");
+        match update_known_gateways(gateway_data_path, known_gateways).await {
+            Ok(_) => {
+                info!("Known gateways sucessfully updated");
+            }
+            Err(err) => {
+                //Failing to updating the known gateways does not result in an panic. It just
+                //prints this waring: TODO: Should this be eprint! or warn! (or both?)
+                eprint!(
+                    "could not update known gateways from file {} {:?}",
+                    gateway_data_path, err
+                );
+            }
+        }
+        // Let's chill a bit befor we take new update-requests.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    info!("SIGUSR1-stream dried-up");
+
+    //TODO: Should this return a Err at this point? Should this result in a panic or just keep
+    //running without being able to update the gateways. 
+}
+
 async fn update_known_gateways(
     gateway_data_path: &String,
-    known_gateways: &Arc<tokio::sync::RwLock<HashSet<String>>>,
+    known_gateways: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
     let file = File::open(gateway_data_path)?;
 
