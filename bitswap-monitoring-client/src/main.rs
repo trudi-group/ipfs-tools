@@ -5,16 +5,14 @@ extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
 
-use celes::Country;
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
-use prom::Metrics;
+use prom::{CountryIdenifier, Metrics};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::IpAddr;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, path};
@@ -219,7 +217,7 @@ async fn signal_handler_update_gateways(
     info!("SIGUSR1-stream dried-up");
 
     //TODO: Should this return a Err at this point? Should this result in a panic or just keep
-    //running without being able to update the gateways. 
+    //running without being able to update the gateways.
 }
 
 async fn update_known_gateways(
@@ -250,7 +248,7 @@ async fn update_known_gateways(
 }
 
 async fn connect_and_receive(
-    metrics_by_country: &mut HashMap<(Country, OriginType), Metrics>,
+    metrics_by_country: &mut HashMap<(CountryIdenifier, OriginType), Metrics>,
     monitor_name: &str,
     address: &str,
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
@@ -321,22 +319,21 @@ async fn connect_and_receive(
                     monitor_name, origin_ip, origin_ma
                 );
 
-                let origin_country: celes::Country = match origin_ip {
-                    None => prom::COUNTRY_NAME_UNKNOWN,
+                let origin_country: CountryIdenifier = match origin_ip {
+                    None => CountryIdenifier::Unkown,
                     Some(ip) => match country_db.lookup::<maxminddb::geoip2::Country>(ip) {
                         Ok(country) => country
                             .country
                             .as_ref()
                             .map(|o| o.iso_code)
                             .flatten()
-                            .map(|iso_code| celes::Country::from_str(iso_code).ok())
-                            .flatten()
+                            .map(|iso_code| CountryIdenifier::Alpha2(iso_code.to_string()))
                             .or_else(|| {
                                 debug!(
                                     "Country lookup for IP {} has no country: {:?}",
                                     ip, country
                                 );
-                                Some(prom::COUNTRY_NAME_UNKNOWN)
+                                Some(CountryIdenifier::Unkown)
                             })
                             .unwrap(),
                         Err(err) => match err {
@@ -345,17 +342,17 @@ async fn connect_and_receive(
                                     "{}: IP {:?} not found in MaxMind database: {}",
                                     monitor_name, ip, e
                                 );
-                                prom::COUNTRY_NAME_UNKNOWN
+                                CountryIdenifier::Unkown
                             }
                             _ => {
                                 error!("unable to lookup country for IP {} (from multiaddress {:?}): {:?}",ip,origin_ma,err);
-                                prom::COUNTRY_NAME_ERROR
+                                CountryIdenifier::Error
                             }
                         },
                     },
                 };
                 debug!(
-                    "{}: determined origin of IP {:?} to be {}",
+                    "{}: determined origin of IP {:?} to be {:?}",
                     monitor_name, origin_ip, origin_country
                 );
 
@@ -368,10 +365,21 @@ async fn connect_and_receive(
                 let metrics = match metrics_by_country.get(&(origin_country, origin_type)) {
                     None => {
                         debug!(
-                            "{}: country metric for {} missing, creating on the fly...",
+                            "{}: country metric for {:?} missing, creating on the fly...",
                             monitor_name, origin_country
                         );
-                        let new_metrics = Metrics::new_for_country(monitor_name, origin_country);
+                        let new_metrics = match prom::Metrics::new_for_countryidentifier(
+                            monitor_name,
+                            origin_country,
+                        ) {
+                            Ok(new_metrics) => new_metrics,
+                            Err(e) => {
+                                //TODO: Should we not take the ERROR/UNKOWN-Country for this? The
+                                //only error-case is that we can not parse the alpha2code
+                                error!("unable to create country metric for country {:?} on the fly: {:?}",origin_country,e);
+                                continue;
+                            }
+                        };
                         // We know that the origin_country value is safe, since we were able to create metrics with it.
                         metrics_by_country.insert((origin_country, origin_type), new_metrics);
                         // We know this is safe since we just inserted it.

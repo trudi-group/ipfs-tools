@@ -1,5 +1,5 @@
 use celes::EmptyLookupTable;
-use failure::ResultExt;
+use failure::{err_msg, ResultExt};
 use ipfs_resolver_common::Result;
 use prometheus::core::{AtomicU64, GenericCounter};
 use prometheus::IntCounterVec;
@@ -56,24 +56,25 @@ lazy_static! {
     )
     .unwrap();
 }
-
-/// Country constants for various error conditions.
-pub(crate) static COUNTRY_NAME_UNKNOWN: celes::Country = celes::Country {
-    code: "Unkown",
-    value: 0,
-    alpha2: "Unkown",
-    alpha3: "Unkown",
-    long_name: "Unkown",
-    aliases: celes::CountryTable::Empty(EmptyLookupTable([])),
-};
-pub(crate) static COUNTRY_NAME_ERROR: celes::Country = celes::Country {
-    code: "Error",
-    value: 0,
-    alpha2: "Error",
-    alpha3: "Error",
-    long_name: "Error",
-    aliases: celes::CountryTable::Empty(EmptyLookupTable([])),
-};
+pub(crate) static COUNTRY_NAME_UNKNOWN: &'static str = "Unknown";
+pub(crate) static COUNTRY_NAME_ERROR: &'static str = "Error";
+// /// Country constants for various error conditions.
+// pub(crate) static COUNTRY_NAME_UNKNOWN: celes::Country = celes::Country {
+//     code: "Unkown",
+//     value: 0,
+//     alpha2: "Unkown",
+//     alpha3: "Unkown",
+//     long_name: "Unkown",
+//     aliases: celes::CountryTable::Empty(EmptyLookupTable([])),
+// };
+// pub(crate) static COUNTRY_NAME_ERROR: celes::Country = celes::Country {
+//     code: "Error",
+//     value: 0,
+//     alpha2: "Error",
+//     alpha3: "Error",
+//     long_name: "Error",
+//     aliases: celes::CountryTable::Empty(EmptyLookupTable([])),
+// };
 
 /// A set of metrics instantiated by monitor name and country.
 pub(crate) struct Metrics {
@@ -112,46 +113,49 @@ pub enum OriginType {
     Gateway,
 }
 
+/// Represents a country with its alpha2-code
+/// If the country is not known the type should be Unkown
+/// If the country could not be found because of an error the type should be Error
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+pub enum CountryIdenifier {
+    Unkown,
+    Error,
+    Alpha2(String),
+}
+
 impl Metrics {
     /// Creates a set of metrics consisting of a few popular countries and the special
     /// error-condition countries, for the given monitor.
     pub(crate) fn create_basic_set(
         monitor_name: &str,
-    ) -> HashMap<(celes::Country, OriginType), Metrics> {
-        let mut metrics_by_country = IntoIterator::into_iter([
-            (celes::Country::germany(), OriginType::Peer),
+    ) -> HashMap<(CountryIdenifier, OriginType), Metrics> {
+        let mut metrics_by_country = [
+            celes::Country::germany(),
+            celes::Country::the_united_states_of_america(),
+            celes::Country::the_netherlands(),
+        ]
+        .into_iter()
+        .map(|c| [(c, OriginType::Peer), (c, OriginType::Gateway)].into_iter())
+        .flatten()
+        .map(|ct| {
             (
-                celes::Country::the_united_states_of_america(),
-                OriginType::Peer,
-            ),
-            (celes::Country::the_netherlands(), OriginType::Peer),
-            (celes::Country::germany(), OriginType::Gateway),
-            (
-                celes::Country::the_united_states_of_america(),
-                OriginType::Gateway,
-            ),
-            (celes::Country::the_netherlands(), OriginType::Gateway),
-        ])
-        .map(|c| (c, Self::new_for_country(monitor_name, c.0)))
+                (CountryIdenifier::Alpha2(ct.0.alpha2.to_string()), ct.1),
+                Self::new_for_country_name(monitor_name, ct.0.long_name),
+            )
+        })
+        .chain(
+            [CountryIdenifier::Unkown, CountryIdenifier::Error]
+                .into_iter()
+                .map(|c| [(c, OriginType::Peer), (c, OriginType::Gateway)].into_iter())
+                .flatten()
+                .map(|ct| {
+                    (
+                        ct,
+                        Self::new_for_countryidentifier(monitor_name, ct.0).unwrap(),
+                    ) //the unwrap is ok because the error can only happen if we the arg has type Alpha2
+                }),
+        )
         .collect::<HashMap<_, _>>();
-
-        // Add special error-countries.
-        metrics_by_country.insert(
-            (COUNTRY_NAME_UNKNOWN, OriginType::Peer),
-            Self::new_unknown(monitor_name),
-        );
-        metrics_by_country.insert(
-            (COUNTRY_NAME_ERROR, OriginType::Peer),
-            Self::new_error(monitor_name),
-        );
-        metrics_by_country.insert(
-            (COUNTRY_NAME_UNKNOWN, OriginType::Gateway),
-            Self::new_unknown(monitor_name),
-        );
-        metrics_by_country.insert(
-            (COUNTRY_NAME_ERROR, OriginType::Gateway),
-            Self::new_error(monitor_name),
-        );
 
         metrics_by_country
     }
@@ -159,18 +163,35 @@ impl Metrics {
     /// Creates a set of metrics with their `origin_country` set to "Unknown".
     /// This is used for events for which no origin can be determined.
     fn new_unknown(monitor_name: &str) -> Metrics {
-        Self::new_for_country(monitor_name, COUNTRY_NAME_UNKNOWN)
+        Self::new_for_country_name(monitor_name, COUNTRY_NAME_UNKNOWN)
     }
 
     /// Creates a set of metrics with their `origin_country` set to "Error".
     /// This is used for events for which determining the origin country failed.
     fn new_error(monitor_name: &str) -> Metrics {
-        Self::new_for_country(monitor_name, COUNTRY_NAME_ERROR)
+        Self::new_for_country_name(monitor_name, COUNTRY_NAME_ERROR)
+    }
+
+    /// Creates a new set of metrics for the country identified by `country_code`.
+    /// If `country_code` is not a valid 2-letter ISO3166-1 code, an error is returned.
+    pub(crate) fn new_for_countryidentifier(
+        monitor_name: &str,
+        country_id: CountryIdenifier,
+    ) -> Result<Metrics> {
+        match country_id {
+            CountryIdenifier::Alpha2(country_code) => {
+                let country = celes::Country::from_alpha2(country_code)
+                    .map_err(|e| err_msg(format!("{}", e)))
+                    .context("invalid country code")?;
+                Ok(Self::new_for_country_name(monitor_name, country.long_name))
+            }
+            CountryIdenifier::Unkown => Ok(Self::new_unknown(monitor_name)),
+            CountryIdenifier::Error => Ok(Self::new_error(monitor_name)),
+        }
     }
 
     /// Creates a new set of metrics for the country
-    pub(crate) fn new_for_country(monitor_name: &str, country: celes::Country) -> Metrics {
-        let country_name = country.long_name;
+    fn new_for_country_name(monitor_name: &str, country_name: &str) -> Metrics {
         Metrics {
             num_messages: BITSWAP_MESSAGES_RECEIVED
                 .get_metric_with_label_values(&[monitor_name, country_name])
