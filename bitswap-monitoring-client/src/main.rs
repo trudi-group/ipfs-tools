@@ -10,10 +10,9 @@ use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
 use prom::{Geolocation, Metrics};
 use std::collections::HashSet;
-use std::net::IpAddr;
+use std::env;
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
-use std::{env, path};
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
@@ -26,6 +25,7 @@ use ipfs_resolver_common::{logging, wantlist, Result};
 
 mod config;
 mod gateways;
+mod geolocation;
 mod prom;
 
 #[tokio::main]
@@ -62,49 +62,11 @@ async fn main() -> Result<()> {
     run_with_config(cfg).await
 }
 
-fn read_geoip_database(cfg: Config) -> Result<maxminddb::Reader<Vec<u8>>> {
-    let geoip_db_path = path::Path::new(&cfg.geoip_database_path);
-
-    let country_db_path = geoip_db_path.join("GeoLite2-Country.mmdb");
-    debug!(
-        "attempting to read GeoLite2 Country database at {:?}...",
-        country_db_path
-    );
-    let country_reader = maxminddb::Reader::open_readfile(country_db_path)
-        .context("unable to open GeoLite2 Country database")?;
-    debug!("successfully opened GeoLite2 Country database");
-
-    let country_db_ts = chrono::DateTime::<chrono::Utc>::from(
-        UNIX_EPOCH + Duration::from_secs(country_reader.metadata.build_epoch),
-    );
-    debug!(
-        "loaded MaxMind country database \"{}\", created {}, with {} entries",
-        country_reader.metadata.database_type,
-        country_db_ts.format("%+"),
-        country_reader.metadata.node_count
-    );
-    if (chrono::Utc::now() - country_db_ts)
-        > chrono::Duration::from_std(Duration::from_secs(30 * 24 * 60 * 60)).unwrap()
-    {
-        warn!(
-            "MaxMind GeoIP country database is older than 30 days (created {})",
-            country_db_ts.format("%+")
-        )
-    }
-
-    debug!("testing MaxMind database...");
-    let google_country = country_reader
-        .lookup::<maxminddb::geoip2::Country>("8.8.8.8".parse().unwrap())
-        .context("unable to look up 8.8.8.8 in Country database")?;
-    debug!("got country {:?} for IP 8.8.8.8", google_country);
-
-    Ok(country_reader)
-}
-
 async fn run_with_config(cfg: Config) -> Result<()> {
     // Read GeoIP databases.
     info!("reading MaxMind GeoLite2 database...");
-    let country_db = read_geoip_database(cfg.clone()).context("unable to open GeoIP databases")?;
+    let country_db =
+        geolocation::read_geoip_database(cfg.clone()).context("unable to open GeoIP databases")?;
     let country_db = Arc::new(country_db);
     info!("successfully read MaxMind database");
 
@@ -210,86 +172,10 @@ async fn connect_and_receive(
                     info!("receiving messages from monitor {}...", monitor_name)
                 }
 
-                // Extract a multiaddress to use for GeoIP queries.
-                let origin_ma = match &event.inner {
-                    EventType::BitswapMessage(msg) => {
-                        // We filter out any p2p-circuit addresses, since we cannot correctly geolocate those anyway.
-                        msg.connected_addresses.iter().find(|a|
-                            // Test if any part of the multiaddress is p2p circuit.
-                            // Negate that, s.t. we find addresses where no part is p2p circuit.
-                            !a.iter().any(|p| if let multiaddr::Protocol::P2pCircuit = p { true } else { false }))
-                    }
-                    EventType::ConnectionEvent(conn_event) => {
-                        if conn_event.remote.iter().any(|p| {
-                            if let multiaddr::Protocol::P2pCircuit = p {
-                                true
-                            } else {
-                                false
-                            }
-                        }) {
-                            // This is a relayed connection, ignore it.
-                            None
-                        } else {
-                            Some(&conn_event.remote)
-                        }
-                    }
-                };
+                let geolocation = geolocation::geolocate_event(&country_db, &event);
                 debug!(
-                    "{}: extracted origin multiaddress {:?} from event {:?}",
-                    monitor_name, origin_ma, event
-                );
-
-                let origin_ip = origin_ma
-                    .map(|ma| ma.iter().next())
-                    .map(|p| match p {
-                        None => None,
-                        Some(p) => match p {
-                            multiaddr::Protocol::Ip4(addr) => Some(IpAddr::V4(addr)),
-                            multiaddr::Protocol::Ip6(addr) => Some(IpAddr::V6(addr)),
-                            _ => None,
-                        },
-                    })
-                    .flatten();
-                debug!(
-                    "{}: extracted IP {:?} from multiaddress {:?}",
-                    monitor_name, origin_ip, origin_ma
-                );
-
-                let origin_country: Geolocation = match origin_ip {
-                    None => Geolocation::Unknown,
-                    Some(ip) => match country_db.lookup::<maxminddb::geoip2::Country>(ip) {
-                        Ok(country) => country
-                            .country
-                            .as_ref()
-                            .map(|o| o.iso_code)
-                            .flatten()
-                            .map(|iso_code| Geolocation::Alpha2(iso_code.to_string()))
-                            .or_else(|| {
-                                debug!(
-                                    "Country lookup for IP {} has no country: {:?}",
-                                    ip, country
-                                );
-                                Some(Geolocation::Unknown)
-                            })
-                            .unwrap(),
-                        Err(err) => match err {
-                            maxminddb::MaxMindDBError::AddressNotFoundError(e) => {
-                                debug!(
-                                    "{}: IP {:?} not found in MaxMind database: {}",
-                                    monitor_name, ip, e
-                                );
-                                Geolocation::Unknown
-                            }
-                            _ => {
-                                error!("unable to lookup country for IP {} (from multiaddress {:?}): {:?}",ip,origin_ma,err);
-                                Geolocation::Error
-                            }
-                        },
-                    },
-                };
-                debug!(
-                    "{}: determined origin of IP {:?} to be {:?}",
-                    monitor_name, origin_ip, origin_country
+                    "{}: determined origin of event {:?} to be {:?}",
+                    monitor_name, event, geolocation
                 );
 
                 let origin_type = if known_gateways.read().await.contains(&event.peer) {
@@ -299,7 +185,7 @@ async fn connect_and_receive(
                 };
 
                 let metrics_key = MetricsKey {
-                    geo_origin: origin_country,
+                    geo_origin: geolocation,
                     overlay_origin: origin_type,
                 };
 
