@@ -18,6 +18,11 @@ pub(crate) struct Config {
     /// Defaults to /usr/local/share/GeoIP if unspecified.
     #[serde(default = "default_geoip_database_path")]
     pub(crate) geoip_database_path: String,
+
+    /// Specifies the location of the public gateway ID file.
+    /// Each line in the file should contain one peer ID.
+    /// If not provided, all traffic will be logged as non-gateway traffic.
+    pub(crate) gateway_file_path: Option<String>,
 }
 
 fn default_geoip_database_path() -> String {

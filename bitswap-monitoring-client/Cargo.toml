@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 ipfs-resolver-common = { path = "../common" }
 ipfs_monitoring_plugin_client = { path = "../ipfs-monitoring-plugin-client" }
-tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread","time", "macros"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread", "time", "macros", "signal", "fs"] }
 log = "0.4.14"
 flexi_logger = "0.22.5"
 failure = "0.1.8"
@@ -28,4 +28,4 @@ maxminddb = "0.23.0"
 multiaddr = "0.14"
 
 # ISO 3166-1 countries.
-celes = "2.2.0"
+celes = "2.4.0"
