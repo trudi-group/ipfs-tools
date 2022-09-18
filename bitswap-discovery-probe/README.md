@@ -3,7 +3,7 @@
 This package implements a client for the IPFS monitoring TCP server and Bitswap broadcast probing plugin.
 It asks multiple monitors to broadcast a request for a list of CIDs and processes the incoming responses.
 
-See also [the plugin](https://github.com/scriptkitty/ipfs-metric-exporter).
+See also [the plugin](https://github.com/trudi-group/ipfs-metric-exporter).
 
 ## Configuration
 

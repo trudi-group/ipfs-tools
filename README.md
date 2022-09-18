@@ -2,7 +2,7 @@
 
 Umbrella project for all things related to monitoring and analyzing IPFS stuff with Rust.
 
-Most of the sub-projects have their own README to explain some things in more detail.
+Most of the subprojects have their own README to explain some things in more detail.
 
 ## Sub-projects
 
@@ -28,7 +28,7 @@ It tracks connection durations and simulates the BitSwap engine.
 
 ### `ipfs-monitoring-plugin-client`
 
-A library package implementing a client to our [monitoring plugin](https://github.com/wiberlin/ipfs-metric-exporter).
+A library package implementing a client to our [monitoring plugin](https://github.com/trudi-group/ipfs-metric-exporter).
 This provides TCP as well as HTTP functionality.
 
 ### `bitswap-monitoring-client`
@@ -69,7 +69,7 @@ cargo build --release --locked
 ```
 
 This will take a while for the first build.
-Also, this will build all sub-projects, which then end up in the `target/` directory of the root project.
+Also, this will build all subprojects, which then end up in the `target/` directory of the root project.
 
 ## Configuration
 

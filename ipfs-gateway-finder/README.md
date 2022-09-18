@@ -13,7 +13,7 @@ Building the entire workspace in docker is also a good option.
 
 ## Running
 
-In order to run this, you'll need an IPFS node with public connectivity and the [metric-exporter-plugin](https://github.com/scriptkitty/ipfs-metric-exporter) installed **and configured**.
+In order to run this, you'll need an IPFS node with public connectivity and the [metric-exporter-plugin](https://github.com/trudi-group/ipfs-metric-exporter) installed **and configured**.
 Start the IPFS node with the plugin, watch for something like `Metric Export TCP server listening on 127.0.0.1:8181`, which shows the plugin working and exposing logging via TCP.
 
 You can control the level of logging using the `RUST_LOG` environment variable, like so:
