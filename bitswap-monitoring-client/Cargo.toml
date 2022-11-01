@@ -11,7 +11,7 @@ tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread", "ti
 log = "0.4.14"
 flexi_logger = "0.22.5"
 failure = "0.1.8"
-futures-util = "0.3.24"
+futures-util = "0.3.25"
 chrono = { version = "0.4.22", features = ["serde"] }
 prometheus_exporter = "0.8.4"
 # This needs to be matching the version prometheus_exporter uses!
