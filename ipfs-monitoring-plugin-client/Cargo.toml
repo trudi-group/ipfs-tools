@@ -17,7 +17,7 @@ futures = "^0.3"
 futures-util = "^0.3"
 chrono = { version = "^0.4", features = ["serde"] }
 multiaddr = "0.14"
-serde = "1.0.145"
+serde = "1.0.148"
 serde_json = "1.0.89"
 failure = "^0.1"
 flate2 = "^1"
