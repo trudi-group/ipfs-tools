@@ -11,7 +11,7 @@ log = "^0.4"
 flexi_logger = "0.24"
 failure = "^0.1"
 serde = "1.0.145"
-serde_json = "1.0.85"
+serde_json = "1.0.89"
 chrono = { version="0.4.22", features = ["serde"] }
 parity-multiaddr = "0.11.2"
 glob = "^0.3"
