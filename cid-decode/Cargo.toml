@@ -11,6 +11,6 @@ ipfs-resolver-common = {path="../common"}
 failure = "0.1.7"
 log = "0.4.8"
 dotenv = "0.15.0"
-flexi_logger = "0.22.5"
+flexi_logger = "0.24.1"
 cid = "0.8.6"
 lazy_static = "1.4.0"
