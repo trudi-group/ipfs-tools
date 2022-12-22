@@ -6,7 +6,6 @@ use std::fmt::Debug;
 
 const API_BASE_PATH: &str = "/metric_plugin/v1";
 const API_PATH_PING: &str = "/ping";
-const API_PATH_MONITORING_ADDRESSES: &str = "/monitoring_addresses";
 const API_PATH_BROADCAST_WANT: &str = "/broadcast_want";
 const API_PATH_BROADCAST_CANCEL: &str = "/broadcast_cancel";
 const API_PATH_BROADCAST_WANT_CANCEL: &str = "/broadcast_want_cancel";
