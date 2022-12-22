@@ -8,8 +8,8 @@ use crate::Result;
 /// Configuration file for bitswap monitoring client.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Config {
-    /// Configures what monitors to connect to.
-    pub(crate) monitors: Vec<MonitorConfig>,
+    /// Configures the AMQP servers to connect to.
+    pub(crate) amqp_servers: Vec<AMQPServerConfig>,
 
     /// Specifies on what address a prometheus endpoint will be created.
     pub(crate) prometheus_address: String,
@@ -25,18 +25,18 @@ pub(crate) struct Config {
     pub(crate) gateway_file_path: Option<String>,
 }
 
-fn default_geoip_database_path() -> String {
-    "/usr/local/share/GeoIP".to_string()
+/// Configuration for a single data source.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct AMQPServerConfig {
+    /// The address of the server, including the amqp:// or amqps:// scheme.
+    pub(crate) amqp_server_address: String,
+
+    // A list of monitor names to subscribe to.
+    pub(crate) monitor_names: Vec<String>,
 }
 
-/// Configuration for a single monitor to connect to.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MonitorConfig {
-    /// The name of the monitor.
-    pub(crate) name: String,
-
-    /// The address of the TCP endpoint of this monitor.
-    pub(crate) address: String,
+fn default_geoip_database_path() -> String {
+    "/usr/local/share/GeoIP".to_string()
 }
 
 impl Config {

@@ -1,6 +1,6 @@
 use crate::{Config, Geolocation};
 use failure::ResultExt;
-use ipfs_monitoring_plugin_client::tcp::{EventType, PushedEvent};
+use ipfs_monitoring_plugin_client::monitoring::{EventType, PushedEvent};
 use maxminddb::Reader;
 use std::net::IpAddr;
 use std::path;

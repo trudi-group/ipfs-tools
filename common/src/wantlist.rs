@@ -2,12 +2,17 @@ use crate::Result;
 use failure::{err_msg, ResultExt};
 use parity_multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
+use serde_repr::*;
 use std::collections::HashMap;
 use std::mem;
 
 /// Constants for the `want_type` field of a `JSONWantlistEntry`.
-pub const JSON_WANT_TYPE_BLOCK: i32 = 0;
-pub const JSON_WANT_TYPE_HAVE: i32 = 1;
+#[derive(Serialize_repr, Deserialize_repr, Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
+pub enum JSONWantType {
+    Block = 0,
+    Have = 1,
+}
 
 /// The JSON encoding of a CID.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -28,7 +33,7 @@ pub struct JSONWantlistEntry {
     #[serde(alias = "Cid")]
     pub cid: JsonCID,
     #[serde(alias = "WantType")]
-    pub want_type: i32,
+    pub want_type: JSONWantType,
 }
 
 /// A wantlist message.
@@ -210,21 +215,20 @@ impl CSVWantlistEntry {
                     CSV_ENTRY_TYPE_CANCEL
                 } else {
                     match entry.want_type {
-                        JSON_WANT_TYPE_BLOCK => {
+                        JSONWantType::Block => {
                             if entry.send_dont_have {
                                 CSV_ENTRY_TYPE_WANT_BLOCK_SEND_DONT_HAVE
                             } else {
                                 CSV_ENTRY_TYPE_WANT_BLOCK
                             }
                         }
-                        JSON_WANT_TYPE_HAVE => {
+                        JSONWantType::Have => {
                             if entry.send_dont_have {
                                 CSV_ENTRY_TYPE_WANT_HAVE_SEND_DONT_HAVE
                             } else {
                                 CSV_ENTRY_TYPE_WANT_HAVE
                             }
                         }
-                        _ => panic!("unknown JSON want type {}", entry.want_type),
                     }
                 },
                 cid: entry.cid.path,
@@ -317,12 +321,8 @@ enum WantType {
 impl WantType {
     fn from_json_entry(e: &JSONWantlistEntry) -> WantType {
         match e.want_type {
-            JSON_WANT_TYPE_BLOCK => WantType::Block,
-            JSON_WANT_TYPE_HAVE => WantType::Have,
-            _ => panic!(
-                "attempted to create WantType from weird JSON entry: {:?}",
-                e
-            ),
+            JSONWantType::Block => WantType::Block,
+            JSONWantType::Have => WantType::Have,
         }
     }
 

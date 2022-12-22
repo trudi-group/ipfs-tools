@@ -5,7 +5,7 @@
 # You can probably overwrite it by mounting your own config directory, I guess.
 
 # Get some small base image to run things on.
-FROM debian:buster-slim AS runtime
+FROM ubuntu:jammy AS runtime
 
 # Create a system user to drop into.
 # This will get some small (<1000) UID and GID, which is fine since we don't write to any files on the host.
@@ -33,4 +33,4 @@ EXPOSE 8088
 USER ipfs
 
 # Run the binary.
-ENTRYPOINT ["./wantlist-client","--config","config/bitswap-monitoring-client-config.yaml"]
+ENTRYPOINT ["./bitswap-monitoring-client","--config","./config/bitswap-monitoring-client-config.yaml"]

@@ -1,8 +1,8 @@
 # This is a config file for the bitswap-discovery-probe tool.
 monitors:
   - name: "local"
-    monitoring_address: "127.0.0.1:8181"
-    api_base_url: "http://127.0.0.1:8432"
+    amqp_server_address: "amqp://localhost:5672/%2f"
+    api_base_url: "http://localhost:8432"
 cancel_after_seconds: 30
 wait_after_cancel_seconds: 30
 cids:

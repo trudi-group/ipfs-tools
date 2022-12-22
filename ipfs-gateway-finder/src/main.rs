@@ -5,7 +5,9 @@ use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
-use ipfs_monitoring_plugin_client::tcp::{EventType, MonitoringClient, PushedEvent};
+use ipfs_monitoring_plugin_client::monitoring::{
+    EventType, MonitoringClient, PushedEvent, RoutingKeyInformation,
+};
 use ipfs_resolver_common::wantlist::JSONMessage;
 use ipfs_resolver_common::{logging, Result};
 use rand::{Rng, SeedableRng};
@@ -19,7 +21,6 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -67,11 +68,19 @@ async fn do_probing() -> Result<()> {
         .about("Finds overlay addresses of public IPFS gateways through probing their HTTP side with crafted content.\n\
         Prints results to STDOUT in JSON or CSV format, logs to STDERR.")
         .arg(
-            Arg::with_name("bitswap_server_address")
-                .long("monitor-logging-addr")
+            Arg::with_name("amqp_server_address")
+                .long("amqp-server-addr")
                 .value_name("ADDRESS")
-                .help("The address of the bitswap monitor to connect to")
-                .default_value("localhost:8181")
+                .help("The address of the AMQP server to connect to for real-time data. Including scheme amqp or amqps (TLS).")
+                .default_value("amqp://localhost:5672/%2f")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("monitor_name")
+                .long("monitor-name")
+                .value_name("NAME")
+                .help("The name the monitor uses for data on the AMQP server")
+                .default_value("local")
                 .takes_value(true),
         )
         .arg(
@@ -114,10 +123,11 @@ async fn do_probing() -> Result<()> {
         .get_matches();
 
     // These all have defaults, so we can call unwrap safely.
-    let bitswap_monitor_address = matches.value_of("bitswap_server_address").unwrap();
+    let amqp_server_address = matches.value_of("amqp_server_address").unwrap();
+    let monitor_name = matches.value_of("monitor_name").unwrap();
     info!(
-        "using bitswap monitor logging address {}",
-        bitswap_monitor_address
+        "using AMQP server at {}, will subscribe to events for monitor {}",
+        amqp_server_address, monitor_name
     );
 
     let monitor_api_address = matches.value_of("monitor_api_address").unwrap();
@@ -228,18 +238,26 @@ async fn do_probing() -> Result<()> {
     }
 
     // Start listening for bitswap messages
-    debug!(
-        "connecting to bitswap monitoring node at {}...",
-        bitswap_monitor_address
-    );
-    let conn = TcpStream::connect(bitswap_monitor_address).await?;
-    info!("connected to bitswap monitor");
+    debug!("connecting to AMQP server at {}...", amqp_server_address);
+    let amqp_client = MonitoringClient::new(
+        amqp_server_address,
+        &vec![RoutingKeyInformation::BitswapMessages {
+            monitor_name: monitor_name.to_string(),
+        }],
+    )
+    .await
+    .context("unable to connect to AMQP server")?;
+    info!("connected to AMQP server");
 
     let (monitoring_ready_tx, monitoring_ready_rx) = tokio::sync::oneshot::channel();
-    let monitoring_client =
-        Monitor::monitor_bitswap(gateway_states.clone(), cids, conn, monitoring_ready_tx)
-            .await
-            .context("unable to start bitswap monitoring")?;
+    let monitoring_client = Monitor::monitor_bitswap(
+        gateway_states.clone(),
+        cids,
+        amqp_client,
+        monitoring_ready_tx,
+    )
+    .await
+    .context("unable to start bitswap monitoring")?;
 
     debug!("waiting for bitswap monitoring to be ready...");
     monitoring_ready_rx.await.unwrap();
@@ -302,7 +320,7 @@ impl Monitor {
     async fn monitor_bitswap(
         gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>,
         mut cids: HashSet<String>,
-        conn: TcpStream,
+        mut monitoring_client: MonitoringClient,
         monitoring_ready_tx: tokio::sync::oneshot::Sender<()>,
     ) -> Result<Monitor> {
         // Build an index that maps from CID to the gateway the CID was sent to.
@@ -315,31 +333,40 @@ impl Monitor {
             m
         };
 
-        let mut monitoring_client = MonitoringClient::new(conn)
-            .await
-            .context("unable to create Bitswap monitoring client")?;
-        let remote = monitoring_client.remote;
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
 
         tokio::task::spawn(async move {
             let mut ready_tx = Some(monitoring_ready_tx);
-            debug!("attempting to receive Bitswap messages from {}...", remote);
+            debug!("attempting to receive Bitswap messages...");
             loop {
                 select! {
                     _ = &mut shutdown_rx => {
                         // Shut down.
-                        debug!("{}: shutting down monitoring cleanly",remote);
+                        debug!("shutting down monitoring cleanly");
                         break
                     },
-                    event = monitoring_client.next() => {
-                        match event {
-                            None => { break }
-                            Some(event) => {
-                                if let Err(e) = Self::handle_event(&remote, event, &cid_to_gateway, &mut cids, &gateway_states, &mut ready_tx).await {
-                                    error!("{}: unable to handle event: {}",remote,e);
-                                    break
+                    event_res = monitoring_client.next() => {
+                        match event_res {
+                            None => {
+                                break
+                            }
+                            Some(res) => {
+                                match res {
+                                    Err(e) => {
+                                        error!("monitoring failed: {:?}",e);
+                                        break;
+                                    }
+                                    Ok((_,events) ) => {
+                                        for event in events.into_iter() {
+                                        if let Err(e) = Self::handle_event(event, &cid_to_gateway, &mut cids, &gateway_states, &mut ready_tx).await {
+                                            error!("unable to handle event: {}",e);
+                                            break
+                                        }
+                                        }
+                                    }
                                 }
                             }
+
                         }
                     }
                 }
@@ -354,15 +381,12 @@ impl Monitor {
     }
 
     async fn handle_event(
-        remote: &SocketAddr,
-        event: Result<PushedEvent>,
+        event: PushedEvent,
         cid_to_gateway: &HashMap<String, String>,
         cids: &mut HashSet<String>,
         gateway_states: &Arc<HashMap<String, Mutex<ProbingState>>>,
         ready_tx: &mut Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Result<()> {
-        let event = event.context("unable to receive event")?;
-
         if let Some(sender) = ready_tx.take() {
             debug!("got bitswap messages, connection is working");
             sender.send(()).unwrap();
@@ -371,7 +395,7 @@ impl Monitor {
             EventType::BitswapMessage(msg) => {
                 for entry in &msg.wantlist_entries {
                     if cids.contains(&entry.cid.path) {
-                        debug!("{}: received interesting CID {}", remote, entry.cid.path);
+                        debug!("received interesting CID {}", entry.cid.path);
                         let gw_name = cid_to_gateway
                             .get(&entry.cid.path)
                             .expect("missing CID in state list");
@@ -380,8 +404,8 @@ impl Monitor {
                             .expect("missing gateway in state list");
 
                         info!(
-                            "{}: got wantlist CID {} from peer {}, which is gateway {}",
-                            remote, entry.cid.path, event.peer, gw_name
+                            "got wantlist CID {} from peer {}, which is gateway {}",
+                            entry.cid.path, event.peer, gw_name
                         );
 
                         {

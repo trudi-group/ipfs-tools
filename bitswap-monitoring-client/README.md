@@ -28,16 +28,17 @@ prometheus_address: "0.0.0.0:8080"
 # Defaults to empty, i.e., no tagging of gateway traffic.
 #gateway_file_path: "/usr/local/share/gateways.txt"
 
-# List of monitors to connect to.
-monitors:
-  - name: "DE1"
-    address: "10.0.1.5:4321"
-  - name: "DE2"
-    address: "10.0.1.2:4321"
+# List of AMQP data sources to connect to.
+amqp_servers:
+  # Address of the AMQP server, using amqp or amqps (TLS transport) scheme.
+  - amqp_server_address: "amqp://localhost:5672/%2f"
+    # A list of monitors to subscribe to via this data source.
+    monitor_names:
+      - "local"
 ```
 
-Each monitor is configured with a name and the remote endpoint to connect to.
 The `prometheus_address` specifies the local endpoint to listen and serve Prometheus metrics on.
+For each (`amqp_server`, `monitor_name`) combination, a connection to the AMQP server will be opened.
 
 ## Metrics
 

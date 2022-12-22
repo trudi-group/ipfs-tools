@@ -5,23 +5,22 @@ extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
 
+use crate::config::Config;
+use crate::prom::{MetricsKey, PublicGatewayStatus};
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
 use futures_util::StreamExt;
+use ipfs_monitoring_plugin_client::monitoring::{
+    BlockPresenceType, EventType, MonitoringClient, RoutingKeyInformation,
+};
+use ipfs_resolver_common::wantlist::JSONWantType;
+use ipfs_resolver_common::{logging, Result};
 use prom::{Geolocation, Metrics};
 use std::collections::HashSet;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::sync::RwLock;
-
-use crate::config::Config;
-use crate::prom::{MetricsKey, PublicGatewayStatus};
-use ipfs_monitoring_plugin_client::tcp::{
-    EventType, MonitoringClient, BLOCK_PRESENCE_TYPE_DONT_HAVE, BLOCK_PRESENCE_TYPE_HAVE,
-};
-use ipfs_resolver_common::{logging, wantlist, Result};
 
 mod config;
 mod gateways;
@@ -104,37 +103,57 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     // Connect to monitors
     info!("starting infinite connection loop, try Ctrl+C to exit");
     let handles = cfg
-        .monitors
+        .amqp_servers
         .into_iter()
         .map(|c| {
-            let country_db = country_db.clone();
-            let known_gateways = known_gateways.clone();
-
-            tokio::spawn(async move {
-                let name = c.name.clone();
-                let addr = c.address;
-
-                // Create metrics for a few popular countries ahead of time.
-                let mut metrics_by_country = Metrics::create_basic_set(&name);
-
-                loop {
+            c.monitor_names
+                .into_iter()
+                .map(|name| {
+                    let name = name.clone();
                     let country_db = country_db.clone();
-                    let res = connect_and_receive(
-                        &mut metrics_by_country,
-                        &name,
-                        &addr,
-                        country_db,
-                        &known_gateways,
-                    )
-                    .await;
+                    let known_gateways = known_gateways.clone();
+                    let amqp_server_address = c.amqp_server_address.clone();
 
-                    info!("monitor {}: result: {:?}", name, res);
+                    tokio::spawn(async move {
+                        // Create metrics for a few popular countries ahead of time.
+                        let mut metrics_by_country = Metrics::create_basic_set(&name);
+                        let routing_keys = vec![
+                            RoutingKeyInformation::BitswapMessages {
+                                monitor_name: name.clone(),
+                            },
+                            RoutingKeyInformation::ConnectionEvents {
+                                monitor_name: name.clone(),
+                            },
+                        ];
 
-                    info!("monitor {}: sleeping for one second", name);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
-            })
+                        loop {
+                            let country_db = country_db.clone();
+                            let res = connect_and_receive(
+                                &mut metrics_by_country,
+                                &name,
+                                &amqp_server_address,
+                                &routing_keys,
+                                country_db,
+                                &known_gateways,
+                            )
+                            .await;
+
+                            info!(
+                                "server {}, monitor {}: result: {:?}",
+                                amqp_server_address, name, res
+                            );
+
+                            info!(
+                                "server {}, monitor {}: sleeping for one second",
+                                amqp_server_address, name
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
         })
+        .flatten()
         .collect::<Vec<_>>();
 
     // Sleep forever (probably)
@@ -148,194 +167,200 @@ async fn run_with_config(cfg: Config) -> Result<()> {
 async fn connect_and_receive(
     metrics_by_country: &mut prom::MetricsMap,
     monitor_name: &str,
-    address: &str,
+    amqp_server_address: &str,
+    routing_keys: &[RoutingKeyInformation],
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
     known_gateways: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<()> {
-    debug!("connecting to monitor {} at {}...", monitor_name, address);
-    let conn = TcpStream::connect(address).await?;
-    info!("connected to monitor {} at {}", monitor_name, address);
-
-    let mut client = MonitoringClient::new(conn).await?;
+    debug!(
+        "connecting to AMQP server {} at {} and subscribing to events for monitor {}...",
+        monitor_name, amqp_server_address, monitor_name
+    );
+    let mut client = MonitoringClient::new(amqp_server_address, &routing_keys).await?;
+    info!(
+        "connected for monitor {} at {}",
+        monitor_name, amqp_server_address
+    );
 
     let mut first = true;
 
-    while let Some(event) = client.next().await {
-        match event {
+    while let Some(events) = client.next().await {
+        match events {
             Err(err) => {
                 error!("unable to receive events: {}", err);
                 break;
             }
-            Ok(event) => {
+            Ok((_, events)) => {
                 if first {
                     first = false;
-                    info!("receiving messages from monitor {}...", monitor_name)
+                    info!("receiving messages for monitor {}...", monitor_name)
                 }
 
-                let geolocation = geolocation::geolocate_event(&country_db, &event);
-                debug!(
-                    "{}: determined origin of event {:?} to be {:?}",
-                    monitor_name, event, geolocation
-                );
+                for event in events {
+                    let geolocation = geolocation::geolocate_event(&country_db, &event);
+                    debug!(
+                        "{}: determined origin of event {:?} to be {:?}",
+                        monitor_name, event, geolocation
+                    );
 
-                let origin_type = if known_gateways.read().await.contains(&event.peer) {
-                    PublicGatewayStatus::Gateway
-                } else {
-                    PublicGatewayStatus::NonGateway
-                };
+                    let origin_type = if known_gateways.read().await.contains(&event.peer) {
+                        PublicGatewayStatus::Gateway
+                    } else {
+                        PublicGatewayStatus::NonGateway
+                    };
 
-                let metrics_key = MetricsKey {
-                    geo_origin: geolocation,
-                    overlay_origin: origin_type,
-                };
+                    let metrics_key = MetricsKey {
+                        geo_origin: geolocation,
+                        overlay_origin: origin_type,
+                    };
 
-                let metrics = match metrics_by_country.get(&metrics_key) {
-                    None => {
-                        debug!(
-                            "{}: metrics for {:?} missing, creating on the fly...",
-                            monitor_name, metrics_key
-                        );
-                        match Metrics::new_for_key(monitor_name, &metrics_key) {
-                            Ok(new_metrics) => {
-                                // We know that the metrics_key value is safe, since we were able to create metrics with it.
-                                metrics_by_country.insert(metrics_key.clone(), new_metrics);
-                                // We know this is safe since we just inserted it.
-                                metrics_by_country.get(&metrics_key).unwrap()
-                            }
-                            Err(e) => {
-                                error!(
+                    let metrics = match metrics_by_country.get(&metrics_key) {
+                        None => {
+                            debug!(
+                                "{}: metrics for {:?} missing, creating on the fly...",
+                                monitor_name, metrics_key
+                            );
+                            match Metrics::new_for_key(monitor_name, &metrics_key) {
+                                Ok(new_metrics) => {
+                                    // We know that the metrics_key value is safe, since we were able to create metrics with it.
+                                    metrics_by_country.insert(metrics_key.clone(), new_metrics);
+                                    // We know this is safe since we just inserted it.
+                                    metrics_by_country.get(&metrics_key).unwrap()
+                                }
+                                Err(e) => {
+                                    error!(
                                     "unable to create metrics for country {:?} on the fly: {:?}",
                                     metrics_key, e
                                 );
-                                // We use the Error country instead.
-                                // We know this is safe since that country is always present in the map.
-                                metrics_by_country
-                                    .get(&MetricsKey {
-                                        geo_origin: Geolocation::Error,
-                                        overlay_origin: metrics_key.overlay_origin,
-                                    })
-                                    .unwrap()
+                                    // We use the Error country instead.
+                                    // We know this is safe since that country is always present in the map.
+                                    metrics_by_country
+                                        .get(&MetricsKey {
+                                            geo_origin: Geolocation::Error,
+                                            overlay_origin: metrics_key.overlay_origin,
+                                        })
+                                        .unwrap()
+                                }
                             }
                         }
-                    }
-                    Some(m) => m,
-                };
+                        Some(m) => m,
+                    };
 
-                // Create a constant-width identifier for logging.
-                // This makes logging output nicely aligned :)
-                // We only use this in debug logging, so we only create it if debug logging is enabled.
-                let ident = if log_enabled!(log::Level::Debug) {
-                    event.constant_width_identifier()
-                } else {
-                    "".to_string()
-                };
+                    // Create a constant-width identifier for logging.
+                    // This makes logging output nicely aligned :)
+                    // We only use this in debug logging, so we only create it if debug logging is enabled.
+                    let ident = if log_enabled!(log::Level::Debug) {
+                        event.constant_width_identifier()
+                    } else {
+                        "".to_string()
+                    };
 
-                match &event.inner {
-                    EventType::ConnectionEvent(conn_event) => {
-                        match conn_event.connection_event_type {
-                            ipfs_monitoring_plugin_client::tcp::CONN_EVENT_CONNECTED => {
-                                metrics.num_connected.inc();
-                                debug!("{} {:12}", ident, "CONNECTED")
+                    match &event.inner {
+                        EventType::ConnectionEvent(conn_event) => {
+                            match conn_event.connection_event_type {
+                                ipfs_monitoring_plugin_client::monitoring::ConnectionEventType::Connected => {
+                                    metrics.num_connected.inc();
+                                    debug!("{} {:12}", ident, "CONNECTED")
+                                }
+                                ipfs_monitoring_plugin_client::monitoring::ConnectionEventType::Disconnected => {
+                                    metrics.num_disconnected.inc();
+                                    debug!("{} {:12}", ident, "DISCONNECTED")
+                                }
                             }
-                            ipfs_monitoring_plugin_client::tcp::CONN_EVENT_DISCONNECTED => {
-                                metrics.num_disconnected.inc();
-                                debug!("{} {:12}", ident, "DISCONNECTED")
-                            }
-                            _ => {}
                         }
-                    }
-                    EventType::BitswapMessage(msg) => {
-                        metrics.num_messages.inc();
+                        EventType::BitswapMessage(msg) => {
+                            metrics.num_messages.inc();
 
-                        if !msg.wantlist_entries.is_empty() {
-                            if msg.full_wantlist {
-                                metrics.num_wantlists_full.inc();
-                            } else {
-                                metrics.num_wantlists_incremental.inc();
-                            }
-
-                            for entry in msg.wantlist_entries.iter() {
-                                if entry.cancel {
-                                    metrics.num_entries_cancel.inc();
-                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                    if entry.send_dont_have {
-                                        metrics.num_entries_want_block_send_dont_have.inc();
-                                    } else {
-                                        metrics.num_entries_want_block.inc();
-                                    }
-                                } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                    if entry.send_dont_have {
-                                        metrics.num_entries_want_have_send_dont_have.inc();
-                                    } else {
-                                        metrics.num_entries_want_have.inc();
-                                    }
+                            if !msg.wantlist_entries.is_empty() {
+                                if msg.full_wantlist {
+                                    metrics.num_wantlists_full.inc();
                                 } else {
-                                    error!("monitor {}: ignoring wantlist entry with invalid want type: {:?}",monitor_name,entry);
+                                    metrics.num_wantlists_incremental.inc();
                                 }
 
-                                debug!(
-                                    "{} {:4} {:18} ({:10}) {}",
-                                    ident,
-                                    if msg.full_wantlist { "FULL" } else { "INC" },
+                                for entry in msg.wantlist_entries.iter() {
                                     if entry.cancel {
-                                        "CANCEL".to_string()
-                                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_BLOCK {
-                                        if entry.send_dont_have {
-                                            "WANT_BLOCK|SEND_DH".to_string()
-                                        } else {
-                                            "WANT_BLOCK".to_string()
-                                        }
-                                    } else if entry.want_type == wantlist::JSON_WANT_TYPE_HAVE {
-                                        if entry.send_dont_have {
-                                            "WANT_HAVE|SEND_DH".to_string()
-                                        } else {
-                                            "WANT_HAVE".to_string()
-                                        }
+                                        metrics.num_entries_cancel.inc();
                                     } else {
-                                        format!("WANT_UNKNOWN_TYPE_{}", entry.want_type)
-                                    },
-                                    entry.priority,
-                                    entry.cid.path
-                                )
-                            }
-                        }
+                                        match entry.want_type {
+                                            JSONWantType::Block => {
+                                                if entry.send_dont_have {
+                                                    metrics
+                                                        .num_entries_want_block_send_dont_have
+                                                        .inc();
+                                                } else {
+                                                    metrics.num_entries_want_block.inc();
+                                                }
+                                            }
+                                            JSONWantType::Have => {
+                                                if entry.send_dont_have {
+                                                    metrics
+                                                        .num_entries_want_have_send_dont_have
+                                                        .inc();
+                                                } else {
+                                                    metrics.num_entries_want_have.inc();
+                                                }
+                                            }
+                                        }
+                                    }
 
-                        if !msg.blocks.is_empty() {
-                            for entry in msg.blocks.iter() {
-                                metrics.num_blocks.inc();
-                                debug!("{} {:9} {}", ident, "BLOCK", entry.path)
-                            }
-                        }
-
-                        if !msg.block_presences.is_empty() {
-                            for entry in msg.block_presences.iter() {
-                                match entry.block_presence_type {
-                                    BLOCK_PRESENCE_TYPE_HAVE => {
-                                        metrics.num_block_presence_have.inc()
-                                    }
-                                    BLOCK_PRESENCE_TYPE_DONT_HAVE => {
-                                        metrics.num_block_presence_dont_have.inc()
-                                    }
-                                    _ => {
-                                        warn!(
-                                            "monitor {} sent unknown block presence type {}: {:?}",
-                                            monitor_name, entry.block_presence_type, entry
-                                        )
-                                    }
+                                    debug!(
+                                        "{} {:4} {:18} ({:10}) {}",
+                                        ident,
+                                        if msg.full_wantlist { "FULL" } else { "INC" },
+                                        if entry.cancel {
+                                            "CANCEL".to_string()
+                                        } else {
+                                            match entry.want_type {
+                                                JSONWantType::Block => {
+                                                    if entry.send_dont_have {
+                                                        "WANT_BLOCK|SEND_DH".to_string()
+                                                    } else {
+                                                        "WANT_BLOCK".to_string()
+                                                    }
+                                                }
+                                                JSONWantType::Have => {
+                                                    if entry.send_dont_have {
+                                                        "WANT_HAVE|SEND_DH".to_string()
+                                                    } else {
+                                                        "WANT_HAVE".to_string()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        entry.priority,
+                                        entry.cid.path
+                                    )
                                 }
-                                debug!(
-                                    "{} {:9} {}",
-                                    ident,
+                            }
+
+                            if !msg.blocks.is_empty() {
+                                for entry in msg.blocks.iter() {
+                                    metrics.num_blocks.inc();
+                                    debug!("{} {:9} {}", ident, "BLOCK", entry.path)
+                                }
+                            }
+
+                            if !msg.block_presences.is_empty() {
+                                for entry in msg.block_presences.iter() {
                                     match entry.block_presence_type {
-                                        BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
-                                        BLOCK_PRESENCE_TYPE_DONT_HAVE => "DONT_HAVE".to_string(),
-                                        _ => format!(
-                                            "UNKNOWN_PRESENCE_{}",
-                                            entry.block_presence_type
-                                        ),
-                                    },
-                                    entry.cid.path
-                                )
+                                        BlockPresenceType::Have => {
+                                            metrics.num_block_presence_have.inc()
+                                        }
+                                        BlockPresenceType::DontHave => {
+                                            metrics.num_block_presence_dont_have.inc()
+                                        }
+                                    }
+                                    debug!(
+                                        "{} {:9} {}",
+                                        ident,
+                                        match entry.block_presence_type {
+                                            BlockPresenceType::Have => "HAVE".to_string(),
+                                            BlockPresenceType::DontHave => "DONT_HAVE".to_string(),
+                                        },
+                                        entry.cid.path
+                                    )
+                                }
                             }
                         }
                     }
