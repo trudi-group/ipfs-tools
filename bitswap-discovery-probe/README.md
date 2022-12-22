@@ -1,6 +1,6 @@
 # bitswap-discovery-probe
 
-This package implements a client for the IPFS monitoring TCP server and Bitswap broadcast probing plugin.
+This package implements a client for the IPFS real-time monitoring setup and Bitswap broadcast probing plugin.
 It asks multiple monitors to broadcast a request for a list of CIDs and processes the incoming responses.
 
 See also [the plugin](https://github.com/trudi-group/ipfs-metric-exporter).
@@ -14,12 +14,9 @@ This is an example config file, see also the [file](./config.yaml) and the [impl
 ```yaml
 # This is a config file for the bitswap-discovery-probe tool.
 monitors:
-  - name: "DE1"
-    monitoring_address: "10.0.1.5:4321"
-    api_base_url: "http://10.0.1.5:8432"
-  - name: "DE2"
-    monitoring_address: "10.0.1.2:4321"
-    api_base_url: "http://10.0.1.2:8432"
+  - name: "local"
+    amqp_server_address: "amqp://localhost:5672/%2f"
+    api_base_url: "http://localhost:8432"
 prometheus_address: "0.0.0.0:8080"
 cancel_after_seconds: 30
 wait_after_cancel_seconds: 30
@@ -29,3 +26,5 @@ cids:
 ```
 
 Each monitor is configured with a name and the remote endpoints to connect to.
+The name must be the same as is used on the AMQP server for logging.
+This is configured via [the plugin](https://github.com/trudi-group/ipfs-metric-exporter).

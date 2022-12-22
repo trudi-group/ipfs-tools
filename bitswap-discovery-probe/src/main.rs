@@ -12,13 +12,14 @@ use std::collections::{HashMap, HashSet};
 use std::io::stdout;
 use std::str::FromStr;
 use std::{env, io, time};
-use tokio::net::TcpStream;
 use tokio::select;
 
 use crate::config::Config;
 use ipfs_monitoring_plugin_client::http::{APIClient, BroadcastBitswapWantCancelEntry};
-use ipfs_monitoring_plugin_client::tcp;
-use ipfs_monitoring_plugin_client::tcp::{EventType, MonitoringClient, PushedEvent};
+use ipfs_monitoring_plugin_client::monitoring;
+use ipfs_monitoring_plugin_client::monitoring::{
+    BlockPresenceType, EventType, MonitoringClient, PushedEvent, RoutingKeyInformation,
+};
 use ipfs_resolver_common::{logging, Result};
 
 mod config;
@@ -92,7 +93,7 @@ async fn main() -> Result<()> {
     info!("connecting to monitors");
     let probes = try_join_all(cfg.monitors.iter().map(|c| {
         let name = c.name.clone();
-        Probe::connect(&c.monitoring_address, &c.api_base_url, &cids, &c.name)
+        Probe::connect(&c.amqp_server_address, &c.api_base_url, &cids, &c.name)
             .and_then(|p| async move { futures::future::ok((name, p)).await })
     }))
     .await
@@ -218,23 +219,20 @@ async fn main() -> Result<()> {
                         }
                         BroadcastResponseType::BlockPresence { presence_type } => {
                             match presence_type {
-                                tcp::BLOCK_PRESENCE_TYPE_HAVE => {
+                                BlockPresenceType::Have => {
                                     if cid_entry.have_received_ts.is_some() {
                                         warn!("double HAVE response by peer {} to WANT {} on monitor {}; ignoring; previous state: {:?}",res.peer,res.cid,name,cid_entry);
                                         return
                                     }
                                     cid_entry.have_received_ts = Some(res.timestamp)
                                 },
-                                tcp::BLOCK_PRESENCE_TYPE_DONT_HAVE => {
+                                BlockPresenceType::DontHave => {
                                     if cid_entry.dont_have_received_ts.is_some() {
                                         warn!("double DONT_HAVE response by peer {} to WANT {} on monitor {}; ignoring; previous state: {:?}",res.peer,res.cid,name,cid_entry);
                                         return
                                     }
                                     cid_entry.dont_have_received_ts = Some(res.timestamp)
                                 },
-                                _ => {
-                                    error!("invalid block presence type emitted by monitor {}: {:?}",name,res)
-                                }
                             }
                         }
                     }
@@ -383,7 +381,7 @@ struct BroadcastResponse {
 #[derive(Clone, Debug)]
 enum BroadcastResponseType {
     Block,
-    BlockPresence { presence_type: i32 },
+    BlockPresence { presence_type: BlockPresenceType },
 }
 
 #[derive(Debug)]
@@ -395,7 +393,7 @@ struct Probe {
 
 impl Probe {
     async fn connect(
-        monitoring_address: &str,
+        amqp_address: &str,
         api_base_url: &str,
         cids_of_interest: &[cid::Cid],
         monitor_name: &str,
@@ -411,22 +409,22 @@ impl Probe {
         // Connect to node's monitoring endpoint.
         debug!(
             "connecting to monitor {} at {}...",
-            monitor_name, monitoring_address
-        );
-        let conn = TcpStream::connect(monitoring_address)
-            .await
-            .context("unable to connect")?;
-        info!(
-            "connected to monitor {} at {}",
-            monitor_name, monitoring_address
+            monitor_name, amqp_address
         );
 
-        let monitoring_client =
-            tokio::time::timeout(time::Duration::from_secs(30), MonitoringClient::new(conn))
-                .await
-                .context("timeout creating monitoring client")?
-                .context("unable to initiate monitoring client")?;
-        debug!("{}: created monitoring client", monitor_name);
+        let monitoring_client = tokio::time::timeout(
+            time::Duration::from_secs(30),
+            MonitoringClient::new(
+                amqp_address,
+                &vec![RoutingKeyInformation::BitswapMessages {
+                    monitor_name: monitor_name.to_string(),
+                }],
+            ),
+        )
+        .await
+        .context("timeout creating monitoring client")?
+        .context("unable to initiate monitoring client")?;
+        info!("connected to monitor {} at {}", monitor_name, amqp_address);
 
         // Set up some plumbing.
         let (res_tx, res_rx) = tokio::sync::oneshot::channel();
@@ -508,18 +506,28 @@ impl Probe {
                     debug!("{}: shutting down monitoring cleanly",monitor_name);
                     break
                 },
-                event = monitoring_client.next() => {
-                    match event {
+                event_res = monitoring_client.next() => {
+                    match event_res {
                         None => {break}
-                        Some(event) => {
-                            if let Err(e) = Self::handle_message(&monitor_name,
-                                &cids_of_interest,
-                                event,
-                                &mut first,
-                                &mut responses,
-                                &mut ready_chan) {
-                                error!("{}: unable to handle message: {}",monitor_name,e);
-                                break
+                        Some(event_res) => {
+                            match event_res {
+                                Err(e) => {
+                                    error!("{}: unable to receive messages: {:?}",monitor_name,e);
+                                    break
+                                }
+                                Ok((_,events)) => {
+                                    for event in events.into_iter() {
+                                        if let Err(e) = Self::handle_message(&monitor_name,
+                                            &cids_of_interest,
+                                            event,
+                                            &mut first,
+                                            &mut responses,
+                                            &mut ready_chan) {
+                                                error!("{}: unable to handle message: {}",monitor_name,e);
+                                                break
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -540,13 +548,11 @@ impl Probe {
     fn handle_message(
         monitor_name: &str,
         cids_of_interest: &HashSet<cid::Cid>,
-        event: Result<PushedEvent>,
+        event: PushedEvent,
         first: &mut bool,
         responses: &mut Vec<BroadcastResponse>,
         ready_chan: &mut Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Result<()> {
-        let event = event.context("unable to receive")?;
-
         if *first {
             *first = false;
             info!("receiving messages from monitor {}...", monitor_name);
@@ -608,13 +614,10 @@ impl Probe {
                                         "{} {:9} {}",
                                         ident,
                                         match entry.block_presence_type {
-                                            tcp::BLOCK_PRESENCE_TYPE_HAVE => "HAVE".to_string(),
-                                            tcp::BLOCK_PRESENCE_TYPE_DONT_HAVE =>
+                                            monitoring::BlockPresenceType::Have =>
+                                                "HAVE".to_string(),
+                                            monitoring::BlockPresenceType::DontHave =>
                                                 "DONT_HAVE".to_string(),
-                                            _ => format!(
-                                                "UNKNOWN_PRESENCE_{}",
-                                                entry.block_presence_type
-                                            ),
                                         },
                                         entry.cid.path
                                     );

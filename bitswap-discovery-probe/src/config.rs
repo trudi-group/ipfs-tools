@@ -25,10 +25,12 @@ pub(crate) struct Config {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct MonitorConfig {
     /// The name of the monitor.
+    /// This must be the one also used on the AMQP server.
     pub(crate) name: String,
 
-    /// The address of the TCP endpoint of this monitor, for bitswap monitoring.
-    pub(crate) monitoring_address: String,
+    /// The address of the AMQP server for real-time data.
+    /// Must include amqp or amqps (TLS) scheme.
+    pub(crate) amqp_server_address: String,
 
     /// The base URL for the HTTP API of this monitor.
     pub(crate) api_base_url: String,
