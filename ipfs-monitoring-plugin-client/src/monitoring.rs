@@ -9,11 +9,12 @@ use ipfs_resolver_common::wantlist::{JSONWantlistEntry, JsonCID};
 use ipfs_resolver_common::Result;
 use lapin::message::Delivery;
 use lapin::options::{
-    BasicAckOptions, BasicConsumeOptions, BasicNackOptions, ExchangeDeclareOptions,
-    QueueBindOptions, QueueDeclareOptions,
+    BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
+    ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
 };
 use lapin::types::FieldTable;
-use lapin::{Channel, Connection, ConnectionProperties, Consumer, ExchangeKind};
+use lapin::types::ShortString;
+use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, Consumer, ExchangeKind};
 use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 use serde_repr::*;
@@ -30,13 +31,6 @@ async fn connect(addr: &str) -> Result<Connection> {
     let conn = Connection::connect(addr, ConnectionProperties::default()).await?;
     Ok(conn)
 }
-
-/*
-async fn set_prefetch(c: &Channel, prefetch: u16) -> Result<()> {
-    c.basic_qos(prefetch, BasicQosOptions::default()).await?;
-    Ok(())
-}
-*/
 
 async fn set_up_exchange(c: &Channel) -> Result<()> {
     c.exchange_declare(
@@ -55,11 +49,14 @@ async fn set_up_exchange(c: &Channel) -> Result<()> {
     Ok(())
 }
 
-/*
-async fn publish_message(c: &Channel, payload: &[u8]) -> anyhow::Result<()> {
+async fn publish_message(
+    c: &Channel,
+    routing_key: &RoutingKeyInformation,
+    payload: &[u8],
+) -> Result<()> {
     c.basic_publish(
-        "ipfs.bitswap",
-        "",
+        EXCHANGE_NAME_PASSIVE_MONITORING,
+        &routing_key.to_routing_key(),
         BasicPublishOptions {
             // Does not need to be routed anywhere (i.e., no subscribers?)
             mandatory: false,
@@ -69,20 +66,8 @@ async fn publish_message(c: &Channel, payload: &[u8]) -> anyhow::Result<()> {
         payload,
         BasicProperties::default().with_expiration(ShortString::from("60000")),
     )
-        .await?;
+    .await?;
     Ok(())
-}
-
-pub async fn post_event(c: &Channel, msg: &PushedEvent) -> anyhow::Result<()> {
-    let payload = serde_json::to_vec(&msg)?;
-    publish_message(c, &payload).await?;
-    Ok(())
-}
- */
-
-pub fn decode_event(payload: &[u8]) -> Result<PushedEvent> {
-    let res = serde_json::from_slice(payload)?;
-    Ok(res)
 }
 
 async fn set_up_queue_and_subscribe(c: &Channel, routing_keys: &[String]) -> Result<Consumer> {
@@ -189,7 +174,7 @@ fn decode_routing_key(routing_key: &str) -> Result<RoutingKeyInformation> {
     }
 }
 
-fn encode_messages(msgs: &Vec<PushedEvent>) -> Result<Vec<u8>> {
+fn encode_messages(msgs: &[PushedEvent]) -> Result<Vec<u8>> {
     let mut e = GzEncoder::new(Vec::new(), Compression::default());
     serde_json::to_writer(&mut e, &msgs)?;
     let b: Vec<u8> = e.finish()?;
@@ -249,6 +234,16 @@ impl MonitoringClient {
             chan,
             msg_in: msg_receiver,
         })
+    }
+
+    pub async fn post_events(
+        &self,
+        routing_key: &RoutingKeyInformation,
+        msg: &[PushedEvent],
+    ) -> Result<()> {
+        let payload = encode_messages(msg)?;
+        publish_message(&self.chan, routing_key, &payload).await?;
+        Ok(())
     }
 
     async fn process_incoming_messages(
