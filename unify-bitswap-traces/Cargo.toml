@@ -10,7 +10,7 @@ edition = "2021"
 ipfs-resolver-common = {path = "../common"}
 failure = "0.1.7"
 log = "0.4.8"
-clap = "2.33.1"
+clap = "4.0.32"
 csv = "1.1"
 flate2 = "1.0.24"
 serde = "1.0.148"
