@@ -41,6 +41,10 @@ Additionally, the binary runs a prometheus server to publish metrics about the m
 This binary is used to unify traces from multiple monitors into CSV files for processing in R.
 This is the tool used for [this paper](https://arxiv.org/abs/2104.09202).
 
+### `monitoring-size-estimator`
+
+A binary that connects to multiple monitors via our [monitoring plugin](https://github.com/trudi-group/ipfs-metric-exporter) to estimate the size of the network.
+
 ## Building
 
 ### Dependencies

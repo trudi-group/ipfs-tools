@@ -13,4 +13,5 @@ members = [
 #    "csv-to-graph",
     "unify-bitswap-traces",
     "bitswap-discovery-probe",
+    "monitoring-size-estimator",
 ]

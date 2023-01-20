@@ -31,7 +31,7 @@ pub(crate) struct AMQPServerConfig {
     /// The address of the server, including the amqp:// or amqps:// scheme.
     pub(crate) amqp_server_address: String,
 
-    // A list of monitor names to subscribe to.
+    /// A list of monitor names to subscribe to.
     pub(crate) monitor_names: Vec<String>,
 }
 
