@@ -9,7 +9,7 @@ ipfs-resolver-common = { path = "../common" }
 ipfs_monitoring_plugin_client = { path = "../ipfs-monitoring-plugin-client" }
 tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread","time", "macros"] }
 log = "0.4.14"
-flexi_logger = "0.24.1"
+flexi_logger = "0.24.2"
 failure = "0.1.8"
 futures-util = "0.3.25"
 chrono = { version = "0.4.22", features = ["serde"] }
