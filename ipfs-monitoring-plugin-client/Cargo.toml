@@ -16,7 +16,7 @@ futures-util = "^0.3"
 chrono = { version = "^0.4", features = ["serde"] }
 multiaddr = "0.17"
 serde = "1.0.148"
-serde_json = "1.0.89"
+serde_json = "1.0.91"
 failure = "^0.1"
 flate2 = "^1"
 reqwest = { version = "0.11",default-features = false, features = ["json", "rustls-tls-native-roots"] }
