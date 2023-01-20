@@ -22,7 +22,7 @@ tokio = { version = "^1", features = ["rt-multi-thread","macros","sync"] }
 rand = "0.8.5"
 parity-multiaddr = "0.11.2"
 ipfs-api-backend-hyper = {version="0.5",features = ["with-hyper-rustls"],default-features = false}
-cid = "0.8.5"
+cid = "0.10.1"
 http = "0.2.1"
 csv = "1.1.6"
 clap = "2.33.3"
