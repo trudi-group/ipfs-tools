@@ -19,7 +19,7 @@ prometheus = { version = "0.13", features = ["process"] }
 lazy_static = "1.4.0"
 serde = "1.0.148"
 serde_yaml = "0.9.14"
-clap = "2.33.3"
+clap = "4.1.1"
 
 # MaxMind database reader.
 maxminddb = "0.23.0"
