@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 lazy_static! {
-        pub static ref BITSWAP_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
+    pub static ref BITSWAP_MESSAGES_RECEIVED: IntCounterVec = register_int_counter_vec!(
         "bitswap_messages_received",
         "number of bitswap messages (both requests and responses) received by monitor and origin country",
         &["monitor","origin_country","origin_is_gateway"]
