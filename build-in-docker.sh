@@ -13,5 +13,6 @@ docker cp extract:/ipfs-tools/target/release/cid-decode ./out/
 docker cp extract:/ipfs-tools/target/release/ipfs-gateway-finder ./out/
 docker cp extract:/ipfs-tools/target/release/ipfs-json-to-csv ./out/
 docker cp extract:/ipfs-tools/target/release/unify-bitswap-traces ./out/
+docker cp extract:/ipfs-tools/target/release/monitoring-size-estimator ./out/
 
 docker rm extract

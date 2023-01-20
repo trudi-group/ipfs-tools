@@ -2,6 +2,7 @@ use failure::{err_msg, ResultExt};
 use ipfs_resolver_common::wantlist::JsonCID;
 use ipfs_resolver_common::Result;
 use serde::{Deserialize, Serialize};
+use serde_repr::*;
 use std::fmt::Debug;
 
 const API_BASE_PATH: &str = "/metric_plugin/v1";
@@ -9,6 +10,7 @@ const API_PATH_PING: &str = "/ping";
 const API_PATH_BROADCAST_WANT: &str = "/broadcast_want";
 const API_PATH_BROADCAST_CANCEL: &str = "/broadcast_cancel";
 const API_PATH_BROADCAST_WANT_CANCEL: &str = "/broadcast_want_cancel";
+const API_PATH_SAMPLE_PEER_METADATA: &str = "/sample_peer_metadata";
 
 #[derive(Debug)]
 pub struct APIClient {
@@ -48,20 +50,23 @@ impl APIClient {
 
         Ok(())
     }
-
-    pub async fn monitoring_addresses(&self) -> Result<Vec<String>> {
+    pub async fn sample_peer_metadata(
+        &self,
+        only_connected: bool,
+    ) -> Result<SamplePeerMetadataResponse> {
         let resp = self
             .client
-            .get(self.build_address(API_PATH_PING))
+            .get(self.build_address(API_PATH_SAMPLE_PEER_METADATA))
+            .query(&[("only_connected", only_connected)])
             .send()
             .await
             .context("unable to query API")?
-            .json::<JSONResponse<MonitoringAddressesResponse>>()
+            .json::<JSONResponse<SamplePeerMetadataResponse>>()
             .await
             .context("unable to decode JSON")?
             .into_result()?;
 
-        Ok(resp.addresses)
+        Ok(resp)
     }
 
     pub async fn broadcast_bitswap_want(
@@ -229,4 +234,60 @@ pub struct BroadcastBitswapWantCancelCancelEntry {
     pub timestamp_before_send: chrono::DateTime<chrono::Utc>,
     pub send_duration_millis: i64,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SamplePeerMetadataResponse {
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub num_connections: u32,
+    pub peer_metadata: Vec<PeerMetadataEntry>,
+}
+
+/// Connectedness constants as used in libp2p.
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Clone, Debug)]
+#[repr(u8)]
+pub enum PeerMetadataConnectedness {
+    /// No connection to peer.
+    NotConnected = 0,
+    /// Open, live connection to peer.
+    Connected = 1,
+    /// Recently connected, terminated gracefully.
+    CanConnect = 2,
+    /// Recently attempted connecting but failed to connect.
+    CannotConnect = 3,
+}
+
+/// Metadata about known and connected peers.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct PeerMetadataEntry {
+    /* Metadata about every peer. */
+    /// The ID of the peer.
+    pub peer_id: String,
+
+    /// The connectedness, i.e., current connection status.
+    pub connectedness: PeerMetadataConnectedness,
+
+    /// A list of known valid multiaddresses for this peer.
+    /// If the peer is not currently connected, this information might be outdated.
+    pub multiaddresses: Vec<String>,
+
+    /// A list of known supported protocols for this peer.
+    /// If the peer is not currently connected, this information might be outdated.
+    pub protocols: Option<Vec<String>>,
+
+    /* Metadata about seen or connected peers, optional. */
+    /// Agent version of the peer.
+    /// If we are no longer connected, this reports the last-seen agent version.
+    /// If the agent version is not (yet) known, this is "N/A".
+    /// If this is null, some other error occurred (which hopefully never happens).
+    pub agent_version: Option<String>,
+
+    /// The EWMA of latencies to the peer.
+    /// If we are no longer connected, this reports the last-known average.
+    /// If this is null, we don't have latency information for the peer yet.
+    pub latency_ewma_ns: Option<u64>,
+
+    /* Metadata about connected peers, optional. */
+    /// A list of multiaddresses to which we currently hold a connection.
+    pub connected_multiaddresses: Option<Vec<String>>,
 }
