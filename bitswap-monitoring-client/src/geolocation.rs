@@ -4,6 +4,7 @@ use ipfs_monitoring_plugin_client::monitoring::{EventType, PushedEvent};
 use maxminddb::Reader;
 use std::net::IpAddr;
 use std::path;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -57,22 +58,46 @@ pub(crate) fn geolocate_event(
         EventType::BitswapMessage(msg) => {
             // We filter out any p2p-circuit addresses, since we cannot correctly geolocate those anyway.
             msg.connected_addresses.iter().find(|a|
-                // Test if any part of the multiaddress is p2p circuit.
-                // Negate that, s.t. we find addresses where no part is p2p circuit.
-                !a.iter().any(|p| if let multiaddr::Protocol::P2pCircuit = p { true } else { false }))
+                // Parse the multiaddress
+                match multiaddr::Multiaddr::from_str(a) {
+                    Ok(ma) => {
+                        // Test if any part of the multiaddress is p2p circuit.
+                        // Negate that, s.t. we find addresses where no part is p2p circuit.
+                        !ma.iter().any(|p| if let multiaddr::Protocol::P2pCircuit = p { true } else { false })
+                    }
+                    Err(err) => {
+                        // Probably a new protocol which we can't decode (yet)
+                        debug!("unable to decode multiaddress {}: {:?}",a,err);
+                        false
+                    }
+                }
+            ).map(|a| multiaddr::Multiaddr::from_str(a).unwrap())
         }
         EventType::ConnectionEvent(conn_event) => {
-            if conn_event.remote.iter().any(|p| {
-                if let multiaddr::Protocol::P2pCircuit = p {
-                    true
-                } else {
-                    false
+            // Parse the multiaddress
+            match multiaddr::Multiaddr::from_str(&conn_event.remote) {
+                Ok(ma) => {
+                    if ma.iter().any(|p| {
+                        if let multiaddr::Protocol::P2pCircuit = p {
+                            true
+                        } else {
+                            false
+                        }
+                    }) {
+                        // This is a relayed connection, ignore it.
+                        None
+                    } else {
+                        Some(ma)
+                    }
                 }
-            }) {
-                // This is a relayed connection, ignore it.
-                None
-            } else {
-                Some(&conn_event.remote)
+                Err(err) => {
+                    // Probably a new protocol which we can't decode (yet)
+                    debug!(
+                        "unable to decode multiaddress {}: {:?}",
+                        conn_event.remote, err
+                    );
+                    None
+                }
             }
         }
     };
@@ -82,6 +107,7 @@ pub(crate) fn geolocate_event(
     );
 
     let origin_ip = origin_ma
+        .as_ref()
         .map(|ma| ma.iter().next())
         .map(|p| match p {
             None => None,
