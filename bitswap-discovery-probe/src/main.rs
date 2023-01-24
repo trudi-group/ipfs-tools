@@ -7,7 +7,6 @@ use clap::{App, Arg};
 use failure::{ensure, err_msg, ResultExt};
 use futures_util::future::try_join_all;
 use futures_util::{StreamExt, TryFutureExt};
-use multiaddr::Multiaddr;
 use std::collections::{HashMap, HashSet};
 use std::io::stdout;
 use std::str::FromStr;
@@ -349,7 +348,7 @@ pub struct OutputCSVRow {
 
 #[derive(Debug, Default, Clone, Serialize)]
 struct PeerEntry {
-    connected_addrs: Vec<Multiaddr>,
+    connected_addrs: Vec<String>,
     cids: HashMap<String, CIDEntry>,
 }
 
@@ -372,7 +371,7 @@ struct BroadcastSendStatus {
 #[derive(Clone, Debug)]
 struct BroadcastResponse {
     peer: String,
-    connected_addrs: Vec<Multiaddr>,
+    connected_addrs: Vec<String>,
     timestamp: chrono::DateTime<chrono::Utc>,
     cid: cid::Cid,
     response: BroadcastResponseType,

@@ -15,7 +15,6 @@ use lapin::options::{
 use lapin::types::FieldTable;
 use lapin::types::ShortString;
 use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, Consumer, ExchangeKind};
-use multiaddr::Multiaddr;
 use serde::{Deserialize, Serialize};
 use serde_repr::*;
 use std::pin::Pin;
@@ -316,17 +315,12 @@ impl PushedEvent {
         // TODO I want something that implements Debug, and then formats this on the fly.
         match &self.inner {
             EventType::BitswapMessage(msg) => {
-                let mut addrs = msg
-                    .connected_addresses
-                    .iter()
-                    .map(|ma| format!("{}", ma))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let mut addrs = msg.connected_addresses.join(", ");
                 addrs.truncate(30);
                 format!("{:52} [{:30}]", self.peer, addrs)
             }
             EventType::ConnectionEvent(conn_event) => {
-                format!("{:52} {:32}", self.peer, format!("{}", conn_event.remote))
+                format!("{:52} {:32}", self.peer, conn_event.remote)
             }
         }
     }
@@ -349,7 +343,7 @@ pub struct BitswapMessage {
     pub full_wantlist: bool,
     pub blocks: Vec<JsonCID>,
     pub block_presences: Vec<BlockPresence>,
-    pub connected_addresses: Vec<Multiaddr>,
+    pub connected_addresses: Vec<String>,
 }
 
 /// Block presence indication, as contained in a Bitswap message.
@@ -370,7 +364,7 @@ pub enum BlockPresenceType {
 /// A connection event, as reported by IPFS.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ConnectionEvent {
-    pub remote: Multiaddr,
+    pub remote: String,
     pub connection_event_type: ConnectionEventType,
 }
 

@@ -1430,7 +1430,6 @@ dependencies = [
  "ipfs-resolver-common",
  "lapin",
  "log",
- "multiaddr",
  "reqwest",
  "serde",
  "serde_json",
