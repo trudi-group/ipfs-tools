@@ -8,9 +8,11 @@ and an estimator based on the coupon-collectors problem, which is applicable to 
 
 For details on the algorithms and reasoning behind them, read our [paper](https://arxiv.org/abs/2104.09202).
 
-Sizes are estimated for a) the entire network and b) the number of peers supporting specific protocols.
-The latter is done by first extracting all protocol strings advertised by connected peers.
-The population samples of the two monitors are then filtered based on whether they support a protocol.
+Sizes are estimated for:
+- the entire network
+- the number of peers supporting specific protocols
+- the number of peers running a given agent version.
+The latter two are obtained by filtering the samples of the monitors for peers with a given agent version or supporting a given protocol.
 Finally, an estimate is computed based on these filtered samples.
 
 _It is important to note that all estimators assume **uniform samples** of peers._
@@ -30,7 +32,7 @@ This is an example config file, see also the [file](./config.yaml) and the [impl
 prometheus_address: "0.0.0.0:8088"
 
 # The interval to sleep between estimates, in seconds.
-sample_interval_seconds: 30
+sample_interval_seconds: 60
 
 # Monitors to connect to.
 monitors:
@@ -43,12 +45,25 @@ monitors:
 The `prometheus_address` specifies the local endpoint to listen and serve Prometheus metrics on.
 The `monitors` section describes the monitors to connect to.
 The `plugin_api_address` is the API address of the plugin, not of the kubo node.
+The `name`s provided are used to label metrics for the hypergeometric estimator.
 
 ## Metrics
 
 Metrics are provided via a Prometheus HTTP endpoint.
-
-For each estimation algorithm, results are given for the various protocols offered by connected peers.
+For each estimation algorithm, results are given for the various protocols offered by connected peers, as well as different agent versions.
 The empty protocol `""` denotes that _all_ connected peers were taken into consideration for the estimate.
+Similarly, the empty agent version `""` indicates that _all_ connected peers were taken into consideration.
+Thus, the estimate given for the empty protocol and empty agent version is an estimate of the total network size.
+
+#### `monitoring_size_estimator_hypergeom_size_estimate`
+
+This records estimates obtained via the hypergeometric estimator.
+The estimator can only operate on pairs of monitors, which are indicated via the `monitor_pair` label.
+The other labels are `agent_version` and `protocol`.
+
+#### `monitoring_size_estimator_coupon_size_estimate`
+
+This records estimates obtained via the coupon collector estimator.
+Metrics are labeled with `agent_version` and `protocol`.
 
 See also the [implementation](./src/prom.rs).
