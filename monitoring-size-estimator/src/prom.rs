@@ -6,14 +6,14 @@ use std::net::SocketAddr;
 lazy_static! {
     pub static ref HYPERGEOM_SIZE_ESTIMATE: IntGaugeVec = register_int_gauge_vec!(
         "monitoring_size_estimator_hypergeom_size_estimate",
-        "hypergeometric size estimate by protocol and monitor pair",
-        &["protocol", "monitor_pair"]
+        "hypergeometric size estimate by protocol, agent version, and monitor pair",
+        &["protocol", "agent_version", "monitor_pair"]
     )
     .unwrap();
     pub static ref COUPON_SIZE_ESTIMATE: IntGaugeVec = register_int_gauge_vec!(
         "monitoring_size_estimator_coupon_size_estimate",
-        "size estimate based on the coupon collectors problem by protocol",
-        &["protocol"]
+        "size estimate based on the coupon collectors problem by protocol and agent version",
+        &["protocol", "agent_version"]
     )
     .unwrap();
 }

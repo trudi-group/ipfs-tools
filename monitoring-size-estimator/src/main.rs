@@ -100,6 +100,43 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct PeerMetadata {
+    peer_id: String,
+    supported_protocols: HashSet<String>,
+    agent_version: String,
+}
+
+impl PeerMetadata {
+    fn from_http_peer_metadata(pm: PeerMetadataEntry) -> PeerMetadata {
+        let supported_protocols = pm
+            .protocols
+            .unwrap_or_else(|| Vec::new())
+            .iter()
+            .cloned()
+            .collect();
+        PeerMetadata {
+            peer_id: pm.peer_id.clone(),
+            supported_protocols,
+            agent_version: pm.agent_version.unwrap_or_else(|| "Unknown".to_string()),
+        }
+    }
+
+    fn matches_protocol_selector(&self, protocol: &Option<&String>) -> bool {
+        match *protocol {
+            None => true,
+            Some(p) => self.supported_protocols.contains(p),
+        }
+    }
+
+    fn matches_agent_version_selector(&self, agent_version: &Option<&String>) -> bool {
+        match *agent_version {
+            None => true,
+            Some(agent_version) => self.agent_version == *agent_version,
+        }
+    }
+}
+
 async fn compute_estimates(monitors: &[Monitor]) -> Result<()> {
     let mut connected_peers_per_monitor = Vec::new();
 
@@ -138,125 +175,165 @@ async fn compute_estimates(monitors: &[Monitor]) -> Result<()> {
         bail!("not enough monitors to estimate network size")
     }
 
-    // Extract protocols offered by at least one peer.
-    let protocols = connected_peers_per_monitor
+    // Transform into our lean representation
+    let sample_labels = connected_peers_per_monitor
         .iter()
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    let samples = connected_peers_per_monitor
+        .into_iter()
         .map(|(_, metadata)| metadata)
-        .map(|metadata| metadata.iter().map(|m| m.protocols.clone()))
-        .flatten()
-        .map(|protocols| {
-            if let Some(protocols) = protocols {
-                protocols
-            } else {
-                Vec::new()
-            }
+        .map(|metadata| {
+            metadata
+                .into_iter()
+                .map(|m| PeerMetadata::from_http_peer_metadata(m))
+                .collect::<Vec<_>>()
         })
-        .fold(HashSet::new(), |mut protocols, new_protocols| {
-            for protocol in new_protocols {
-                protocols.insert(protocol);
-            }
-            protocols
+        .collect::<Vec<Vec<PeerMetadata>>>();
+
+    // Extract protocols offered by at least one peer.
+    let protocols = {
+        let mut tmp = HashSet::new();
+        samples.iter().for_each(|sample| {
+            sample
+                .iter()
+                .for_each(|entry| tmp.extend(entry.supported_protocols.clone()))
         });
+        tmp
+    };
     debug!("derived protocols: {:?}", protocols);
 
-    // Calculate global estimate
-    estimate_for_protocol(connected_peers_per_monitor.clone(), None);
+    // Extract agent version strings
+    let agent_versions = {
+        let mut tmp = HashSet::new();
+        samples.iter().for_each(|sample| {
+            sample.iter().for_each(|entry| {
+                tmp.insert(entry.agent_version.clone());
+            })
+        });
+        tmp
+    };
+    debug!("derived agent versions: {:?}", agent_versions);
 
-    // Calculate estimates for protocols
-    for protocol in protocols {
-        estimate_for_protocol(connected_peers_per_monitor.clone(), Some(protocol))
+    // Calculate global estimate
+    estimate_for_protocol_and_agent_version(&sample_labels, &samples, None, None);
+
+    // Calculate global agent version estimates
+    for agent_version in agent_versions.iter() {
+        estimate_for_protocol_and_agent_version(&sample_labels, &samples, None, Some(agent_version))
+    }
+
+    // Calculate global protocol estimates
+    for protocol in protocols.iter() {
+        estimate_for_protocol_and_agent_version(&sample_labels, &samples, Some(protocol), None)
     }
 
     Ok(())
 }
 
-fn estimate_for_protocol(
-    connected_peers_per_monitor: Vec<(String, Vec<PeerMetadataEntry>)>,
-    protocol: Option<String>,
+fn estimate_for_protocol_and_agent_version(
+    monitor_names: &[String],
+    monitor_samples: &[Vec<PeerMetadata>],
+    protocol: Option<&String>,
+    agent_version: Option<&String>,
 ) {
-    connected_peers_per_monitor
+    monitor_samples
+        .iter()
+        .zip(monitor_names.iter())
+        .collect::<Vec<_>>()
         .windows(2)
         .map(|pair| {
-            let names = format!("{} with {}", pair[0].0, pair[1].0);
-            let estimate = hypergeom_estimate(&pair[0].1, &pair[1].1, protocol.clone());
-            (names, estimate)
+            let names = (pair[0].1, pair[1].1);
+            let samples = (&pair[0].0, &pair[1].0);
+            let estimate_name = format!("{} with {}", names.0, names.1);
+            let estimate = hypergeom_estimate(samples.0, samples.1, &protocol, &agent_version);
+            (estimate_name, estimate)
         })
-        .for_each(|(names, estimate)| {
+        .for_each(|(estimate_name, estimate)| {
             debug!(
-                "hypergeom estimate for {}, protocol {:?}: {:?}",
-                names, protocol, estimate
+                "hypergeom estimate for {}, agent version {:?}, protocol {:?}: {:?}",
+                estimate_name, agent_version, protocol, estimate
             );
-            if let Ok(estimate) = estimate {
+            if let Some(estimate) = estimate {
                 prom::HYPERGEOM_SIZE_ESTIMATE
                     .get_metric_with_label_values(&[
                         protocol.as_ref().map(|s| s.as_str()).unwrap_or(""),
-                        &names,
+                        agent_version.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                        &estimate_name,
                     ])
                     .unwrap()
                     .set(estimate as i64)
             }
         });
 
-    match coupon_estimate(
-        connected_peers_per_monitor
-            .iter()
-            .map(|(_, metadata)| metadata)
-            .collect(),
-        protocol.clone(),
-    ) {
-        Ok(estimate) => {
-            debug!("coupon estimate for protocol {:?}: {}", protocol, estimate);
-            prom::COUPON_SIZE_ESTIMATE
-                .get_metric_with_label_values(&[protocol
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or("")])
-                .unwrap()
-                .set(estimate as i64)
-        }
-        Err(e) => {
-            error!(
-                "unable to estimate with coupon collector estimator: {:?}",
-                e
+    match coupon_estimate(monitor_samples, &protocol, &agent_version) {
+        Some(result) => match result {
+            Ok(estimate) => {
+                debug!(
+                    "coupon estimate for agent version {:?}, protocol {:?}: {}",
+                    agent_version, protocol, estimate
+                );
+                prom::COUPON_SIZE_ESTIMATE
+                    .get_metric_with_label_values(&[
+                        protocol.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                        agent_version.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                    ])
+                    .unwrap()
+                    .set(estimate as i64)
+            }
+            Err(e) => {
+                warn!(
+                    "unable to estimate with coupon collector estimator for agent version {:?}, protocol {:?}: {:?}",
+                    agent_version,protocol,                    e
+                )
+            }
+        },
+        None => {
+            debug!(
+                "no coupon estimate for agent version {:?}, protocol {:?}",
+                agent_version, protocol
             )
         }
     }
 }
 
-fn extract_connected_ids_supporting_protocol(
-    peers: &[PeerMetadataEntry],
-    protocol: Option<String>,
+fn extract_connected_ids_supporting_protocol_by_agent_version(
+    peers: &[PeerMetadata],
+    protocol: &Option<&String>,
+    agent_version: &Option<&String>,
 ) -> HashSet<String> {
     peers
         .iter()
-        .filter(|p| match protocol.as_ref() {
-            None => true,
-            Some(protocol) => match p.protocols.as_ref() {
-                None => false,
-                Some(protocols) => protocols.contains(&protocol),
-            },
-        })
+        .filter(|p| p.matches_protocol_selector(protocol))
+        .filter(|p| p.matches_agent_version_selector(agent_version))
         .map(|p| p.peer_id.clone())
         .collect()
 }
 
 fn hypergeom_estimate(
-    monitor_1_peers: &[PeerMetadataEntry],
-    monitor_2_peers: &[PeerMetadataEntry],
-    protocol: Option<String>,
-) -> Result<u64> {
-    let mon_1_peer_ids: HashSet<_> =
-        extract_connected_ids_supporting_protocol(monitor_1_peers, protocol.clone());
-    let mon_2_peer_ids: HashSet<_> =
-        extract_connected_ids_supporting_protocol(monitor_2_peers, protocol.clone());
+    monitor_1_peers: &[PeerMetadata],
+    monitor_2_peers: &[PeerMetadata],
+    protocol: &Option<&String>,
+    agent_version: &Option<&String>,
+) -> Option<u64> {
+    let mon_1_peer_ids: HashSet<_> = extract_connected_ids_supporting_protocol_by_agent_version(
+        monitor_1_peers,
+        protocol,
+        agent_version,
+    );
+    let mon_2_peer_ids: HashSet<_> = extract_connected_ids_supporting_protocol_by_agent_version(
+        monitor_2_peers,
+        protocol,
+        agent_version,
+    );
 
-    Ok(hypergeom_estimate_inner(&mon_1_peer_ids, &mon_2_peer_ids))
+    hypergeom_estimate_inner(mon_1_peer_ids, mon_2_peer_ids)
 }
 
 fn hypergeom_estimate_inner(
-    monitor_1_peers: &HashSet<String>,
-    monitor_2_peers: &HashSet<String>,
-) -> u64 {
+    monitor_1_peers: HashSet<String>,
+    monitor_2_peers: HashSet<String>,
+) -> Option<u64> {
     let n_monitor_1 = monitor_1_peers.len() as u64;
     let n_monitor_2 = monitor_2_peers.len() as u64;
     let union_size = monitor_1_peers.union(&monitor_2_peers).count() as u64;
@@ -266,9 +343,14 @@ fn hypergeom_estimate_inner(
         n_monitor_1, n_monitor_2, union_size, intersection_size
     );
 
+    if n_monitor_1 == 0 && n_monitor_2 == 2 {
+        debug!("no peers to estimate, returning none");
+        return None;
+    }
+
     if intersection_size == 0 {
         debug!("intersection is empty, returning union");
-        return union_size;
+        return Some(union_size);
     }
 
     let estimate = (n_monitor_1 * n_monitor_2) / intersection_size;
@@ -276,28 +358,31 @@ fn hypergeom_estimate_inner(
 
     if union_size > estimate {
         debug!("union is larger than estimate, using that");
-        return union_size;
+        return Some(union_size);
     }
 
-    estimate
+    Some(estimate)
 }
 
 fn coupon_estimate(
-    peer_metadata: Vec<&Vec<PeerMetadataEntry>>,
-    protocol: Option<String>,
-) -> Result<u64> {
+    peer_metadata: &[Vec<PeerMetadata>],
+    protocol: &Option<&String>,
+    agent_version: &Option<&String>,
+) -> Option<Result<u64>> {
     let peer_ids = peer_metadata
         .iter()
-        .map(|m| extract_connected_ids_supporting_protocol(m, protocol.clone()))
+        .map(|m| {
+            extract_connected_ids_supporting_protocol_by_agent_version(m, protocol, agent_version)
+        })
         .filter(|h| !h.is_empty())
         .collect::<Vec<_>>();
 
     if peer_ids.len() == 0 {
-        bail!("no peers supporting the protocol");
+        None
     } else if peer_ids.len() == 1 {
-        Ok(peer_ids[0].len() as u64)
+        Some(Ok(peer_ids[0].len() as u64))
     } else {
-        coupon_estimate_inner(peer_ids)
+        Some(coupon_estimate_inner(peer_ids))
     }
 }
 
@@ -348,11 +433,11 @@ fn coupon_estimate_inner(peers: Vec<HashSet<String>>) -> Result<u64> {
     };
 
     let root = roots::find_root_brent(
-        num_peers_union,
-        10_f64 * num_monitors * num_peers_union,
+        num_peers_union.min(num_monitors * mean_peers_per_monitor),
+        100_f64 * num_peers_union,
         f,
         &mut SimpleConvergency {
-            eps: f64::EPSILON,
+            eps: f64::EPSILON * 10_f64,
             max_iter: 1000,
         },
     );
