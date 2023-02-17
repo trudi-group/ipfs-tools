@@ -43,10 +43,15 @@ For each (`amqp_server`, `monitor_name`) combination, a connection to the AMQP s
 ## Metrics
 
 Metrics are provided via a Prometheus HTTP endpoint.
-All metrics contain fields for the origin `monitor` (which is configured with the `name` field of the configuration file) as well as the `origin_country` and `origin_is_gateway` of the logged event.
+All metrics contain at least these labels:
+- `monitor` for the origin (which is configured with the `name` field of the configuration file)
+- `origin_country`, as determined via geolocating the first potential address for a peer, and
+- `origin_is_gateway`, if a list of gateway IDs was supplied and the peer ID matches.
+
 Metrics for origin countries are created on the fly, if any events from that country are logged.
 There are two special countries `Unknown` and `Error`, indicating whether we were unable to determine an origin for an event, or whether GeoIP lookup failed with an error.
 Multiaddresses containing a P2P circuit, i.e., relayed connections, are ignored and `Unknown` is used for their origin country.
+
 Public gateway status is determined by matching the origin peer ID of an event to a list of known public gateway IDs.
 This list is built using the [gateway-finder tool](../ipfs-gateway-finder) and can be hot-reloaded by sending `SIGUSR1` to the monitoring client.
 See also the [implementation](./src/prom.rs).
@@ -55,27 +60,32 @@ See also the [implementation](./src/prom.rs).
 
 A counter that counts incoming Bitswap messages.
 The IPFS instrumentation emits JSON objects that are either a connection event or an incoming Bitswap message.
-This tracks incoming Bitswap messages, and counts whether they contain a wantlist.
+This tracks incoming Bitswap messages.
 
 ### `bitswap_blocks_received`
 
 A counter that counts how many blocks were received via Bitswap.
+These are not requests, but responses received via Bitswap.
+A message may contain multiple blocks.
 
 ### `bitswap_block_presences_received`
 
 A counter that counts how many block presence indications were received via Bitswap, by the `presence_type` (`have` or `dont_have`).
+These are not requests, but responses received via Bitswap.
+A message may contain multiple block presences.
 
 ### `wantlists_received`
 
 A counter that tracks the number of Bitswap `want_list`s received, by whether the wantlist was `full` or incremental.
-A message may contain one or no wantlist.
-A wantlist may contain multiple entries.
+A message may contain one or no wantlist, e.g., if it is a response message.
+A wantlist may contain multiple entries, which are tracked separately.
 
 ### `wantlist_entries_received`
 
 A counter that tracks the number of wantlist entries received by `entry_type`, and `send_dont_have` flag.
 Entry types are `want_block`, `want_have`, and `cancel`.
 The `send_dont_have` flag is only valid for requests (i.e., it has no meaning for `cancel` entries).
+Wantlist entries are individual requests, for blocks or block presences.
 
 ### `connection_events_(connected|disconnected)`
 
