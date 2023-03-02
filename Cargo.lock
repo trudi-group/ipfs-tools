@@ -1132,7 +1132,7 @@ dependencies = [
  "indexmap",
  "slab",
  "tokio",
- "tokio-util 0.7.4",
+ "tokio-util",
  "tracing",
 ]
 
@@ -1327,11 +1327,12 @@ dependencies = [
 
 [[package]]
 name = "ipfs-api-backend-hyper"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "114341e043a87eff0e43ec192f0a495988323dc14c468448e62b20aaf96bd1e6"
+checksum = "8a9d131b408b4caafe1e7c00d410a09ad3eb7e3ab68690cf668e86904b2176b4"
 dependencies = [
  "async-trait",
+ "base64 0.13.1",
  "bytes",
  "futures",
  "http",
@@ -1344,9 +1345,9 @@ dependencies = [
 
 [[package]]
 name = "ipfs-api-prelude"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbaf47fa129710ae041d5844a15b1365bdad8551673aee237449ba9dec6bcadc"
+checksum = "9b74065805db266ba2c6edbd670b23c4714824a955628472b2e46cc9f3a869cb"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1355,14 +1356,14 @@ dependencies = [
  "dirs",
  "futures",
  "http",
+ "multiaddr",
  "multibase",
- "parity-multiaddr",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "thiserror",
  "tokio",
- "tokio-util 0.6.10",
+ "tokio-util",
  "tracing",
  "walkdir",
 ]
@@ -1442,7 +1443,7 @@ dependencies = [
  "serde_repr",
  "tokio",
  "tokio-serde",
- "tokio-util 0.7.4",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2923,20 +2924,6 @@ dependencies = [
  "pin-project",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "tokio-util"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36943ee01a6d67977dd3f84a5a1d2efeb4ada3a1ae771cadfaa535d9d9fc6507"
-dependencies = [
- "bytes",
- "futures-core",
- "futures-sink",
- "log",
- "pin-project-lite",
- "tokio",
 ]
 
 [[package]]
