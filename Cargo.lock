@@ -1374,7 +1374,7 @@ dependencies = [
 
 [[package]]
 name = "ipfs-gateway-finder"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "cid",
@@ -1388,8 +1388,8 @@ dependencies = [
  "ipfs-resolver-common",
  "ipfs_monitoring_plugin_client",
  "log",
+ "multiaddr",
  "multibase",
- "parity-multiaddr",
  "rand 0.8.5",
  "reqwest",
  "serde",

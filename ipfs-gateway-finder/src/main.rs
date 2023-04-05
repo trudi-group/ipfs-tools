@@ -8,7 +8,7 @@ use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
 use ipfs_monitoring_plugin_client::monitoring::{
     EventType, MonitoringClient, PushedEvent, RoutingKeyInformation,
 };
-use ipfs_resolver_common::wantlist::JSONMessage;
+use ipfs_resolver_common::wantlist::JSONWantlistEntry;
 use ipfs_resolver_common::{logging, Result};
 use rand::{Rng, SeedableRng};
 use reqwest::Url;
@@ -47,7 +47,16 @@ struct ProbingState {
     http_success_timestamp: Option<chrono::DateTime<chrono::Utc>>,
     http_error_message: Option<String>,
 
-    wantlist_message: Option<JSONMessage>,
+    bitswap_message: Option<BitswapMessage>,
+}
+
+/// Information about the bitswap message received.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct BitswapMessage {
+    wantlist_entry: JSONWantlistEntry,
+    connected_addresses: Vec<String>,
+    timestamp: chrono::DateTime<chrono::Utc>,
+    peer: String,
 }
 
 /// Used for JSON printing
@@ -169,7 +178,6 @@ async fn do_probing() -> Result<()> {
         "getting list of gateways from {}...",
         gateway_list_url.as_str()
     );
-
     let gateway_list: Vec<String> = match gateway_list_url.scheme() {
         "file" => {
             let f = File::open(gateway_list_url.path()).context("unable to open file")?;
@@ -205,7 +213,7 @@ async fn do_probing() -> Result<()> {
     );
 
     // Generate random data to add to IPFS.
-    info!("generating random data...");
+    debug!("generating random data...");
     for (_, state) in gateway_states.iter() {
         let rng = rand::rngs::StdRng::from_entropy();
         let bytes: Vec<u8> = rng
@@ -216,14 +224,13 @@ async fn do_probing() -> Result<()> {
         let mut state = state.lock().await;
         state.data = Some(bytes);
     }
+    info!("generated random data");
 
     // Add to IPFS.
     debug!("adding data to IPFS...");
     add_data_to_ipfs(&ipfs_client, gateway_states.clone())
         .await
-        .context(
-            "unable to add (all?) data to monitoring IPFS node. This might need manual cleanup",
-        )?;
+        .context("unable to add data to monitoring IPFS node. This might need manual cleanup")?;
     info!("added data to IPFS");
 
     // Wait for DHT propagation...
@@ -285,19 +292,21 @@ async fn do_probing() -> Result<()> {
     info!("all HTTP workers are done or timed out, waiting some more time for bitswap messages...");
     tokio::time::sleep(Duration::from_secs(120)).await;
 
-    info!("shutting down Bitswap monitoring...");
+    debug!("shutting down Bitswap monitoring...");
     monitoring_client
         .close()
         .await
         .context("unable to cleanly shutdown Bitswap monitoring -- did the connection die?")?;
+    info!("shut down Bitswap monitoring");
 
     // Remove data from IPFS.
-    info!("removing data from monitoring IPFS node...");
+    debug!("removing data from monitoring IPFS node...");
     cleanup_ipfs(&ipfs_client, gateway_states.clone())
         .await
         .context(
             "unable to remove data from monitoring IPFS node. Probably needs manual cleanup",
         )?;
+    info!("removed data from monitoring IPFS node");
 
     // Print results
     info!("printing results..");
@@ -357,8 +366,12 @@ impl Monitor {
                                         break;
                                     }
                                     Ok((_,events) ) => {
+                                        if let Some(sender) = ready_tx.take() {
+                                            debug!("got bitswap messages, connection is working");
+                                            sender.send(()).unwrap();
+                                        }
                                         for event in events.into_iter() {
-                                        if let Err(e) = Self::handle_event(event, &cid_to_gateway, &mut cids, &gateway_states, &mut ready_tx).await {
+                                        if let Err(e) = Self::handle_event(event, &cid_to_gateway, &mut cids, &gateway_states).await {
                                             error!("unable to handle event: {}",e);
                                             break
                                         }
@@ -385,12 +398,7 @@ impl Monitor {
         cid_to_gateway: &HashMap<String, String>,
         cids: &mut HashSet<String>,
         gateway_states: &Arc<HashMap<String, Mutex<ProbingState>>>,
-        ready_tx: &mut Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Result<()> {
-        if let Some(sender) = ready_tx.take() {
-            debug!("got bitswap messages, connection is working");
-            sender.send(()).unwrap();
-        }
         match event.inner {
             EventType::BitswapMessage(msg) => {
                 for entry in &msg.wantlist_entries {
@@ -415,19 +423,15 @@ impl Monitor {
                                 "CID mismatch in CID-to-gw map"
                             );
                             assert!(
-                                state.wantlist_message.is_none(),
-                                "attempting to add multiple wantlist messages for one CID",
+                                state.bitswap_message.is_none(),
+                                "attempting to add multiple bitswap messages for one CID",
                             );
 
-                            state.wantlist_message = Some(JSONMessage {
+                            state.bitswap_message = Some(BitswapMessage {
+                                wantlist_entry: entry.clone(),
                                 timestamp: event.timestamp,
                                 peer: event.peer.clone(),
-                                address: None,
-                                received_entries: Some(msg.wantlist_entries.clone()),
-                                full_want_list: Some(msg.full_wantlist),
-                                peer_connected: None,
-                                peer_disconnected: None,
-                                connect_event_peer_found: None,
+                                connected_addresses: msg.connected_addresses.clone(),
                             });
                         }
 
@@ -657,10 +661,10 @@ async fn print_csv(gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>) ->
     writer.write_field("http_success_ts_subsec_millis")?;
     writer.write_field("http_requests_sent")?;
     writer.write_field("http_remote")?;
-    writer.write_field("first_wl_ts")?;
-    writer.write_field("first_wl_ts_subsec_millis")?;
-    writer.write_field("first_wl_peer")?;
-    writer.write_field("first_wl_address")?;
+    writer.write_field("first_bs_ts")?;
+    writer.write_field("first_bs_ts_subsec_millis")?;
+    writer.write_field("first_bs_peer")?;
+    writer.write_field("first_bs_address")?;
     writer.write_record(None::<&[u8]>)?;
 
     for (gateway, state) in gateway_states.iter() {
@@ -710,7 +714,7 @@ async fn print_csv(gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>) ->
         )?;
         writer.write_field(
             state
-                .wantlist_message
+                .bitswap_message
                 .as_ref()
                 .map_or("".to_string(), |msg| {
                     format!("{}", msg.timestamp.clone().timestamp())
@@ -718,7 +722,7 @@ async fn print_csv(gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>) ->
         )?;
         writer.write_field(
             state
-                .wantlist_message
+                .bitswap_message
                 .as_ref()
                 .map_or("".to_string(), |msg| {
                     format!("{}", msg.timestamp.clone().timestamp_subsec_millis())
@@ -726,18 +730,19 @@ async fn print_csv(gateway_states: Arc<HashMap<String, Mutex<ProbingState>>>) ->
         )?;
         writer.write_field(
             state
-                .wantlist_message
+                .bitswap_message
                 .as_ref()
                 .map_or("".to_string(), |msg| format!("{}", msg.peer.clone())),
         )?;
         writer.write_field(
             state
-                .wantlist_message
+                .bitswap_message
                 .as_ref()
                 .map_or("".to_string(), |msg| {
                     format!(
                         "{}",
-                        msg.address
+                        msg.connected_addresses
+                            .first()
                             .as_ref()
                             .map_or("".to_string(), |addr| format!("{}", addr))
                     )
