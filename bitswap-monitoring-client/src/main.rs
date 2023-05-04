@@ -6,6 +6,7 @@ extern crate lazy_static;
 extern crate prometheus;
 
 use crate::config::Config;
+use crate::disklog::ToDiskLogger;
 use crate::prom::{MetricsKey, PublicGatewayStatus};
 use clap::{App, Arg};
 use failure::{err_msg, ResultExt};
@@ -21,8 +22,10 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 mod config;
+mod disklog;
 mod gateways;
 mod geolocation;
 mod prom;
@@ -69,6 +72,10 @@ async fn run_with_config(cfg: Config) -> Result<()> {
     let country_db = Arc::new(country_db);
     info!("successfully read MaxMind database");
 
+    if let Some(disk_logging_directory) = &cfg.disk_logging_directory {
+        info!("will log to disk at {}", disk_logging_directory)
+    }
+
     // Read list of public gateway IDs.
     let known_gateways = Arc::new(RwLock::new(HashSet::new()));
     match cfg.gateway_file_path {
@@ -113,8 +120,20 @@ async fn run_with_config(cfg: Config) -> Result<()> {
                     let country_db = country_db.clone();
                     let known_gateways = known_gateways.clone();
                     let amqp_server_address = c.amqp_server_address.clone();
+                    let disk_logging_dir = cfg.disk_logging_directory.clone();
 
                     tokio::spawn(async move {
+                        // Create disk logger
+                        let disk_logger = if let Some(dir) = disk_logging_dir.clone() {
+                            Some(
+                                ToDiskLogger::new_for_monitor(&dir, &name)
+                                    .await
+                                    .context("unable to set up disk logging")?,
+                            )
+                        } else {
+                            None
+                        };
+
                         // Create metrics for a few popular countries ahead of time.
                         let mut metrics_by_country = Metrics::create_basic_set(&name);
                         let routing_keys = vec![
@@ -135,6 +154,7 @@ async fn run_with_config(cfg: Config) -> Result<()> {
                                 &routing_keys,
                                 country_db,
                                 &known_gateways,
+                                &disk_logger,
                             )
                             .await;
 
@@ -154,11 +174,11 @@ async fn run_with_config(cfg: Config) -> Result<()> {
                 .collect::<Vec<_>>()
         })
         .flatten()
-        .collect::<Vec<_>>();
+        .collect::<Vec<JoinHandle<Result<()>>>>();
 
     // Sleep forever (probably)
     for handle in handles {
-        handle.await.context("connection loop failed")?;
+        handle.await?.context("monitoring failed")?;
     }
 
     Ok(())
@@ -171,6 +191,7 @@ async fn connect_and_receive(
     routing_keys: &[RoutingKeyInformation],
     country_db: Arc<maxminddb::Reader<Vec<u8>>>,
     known_gateways: &Arc<RwLock<HashSet<String>>>,
+    disk_logger: &Option<ToDiskLogger>,
 ) -> Result<()> {
     debug!(
         "connecting to AMQP server {} at {} and subscribing to events for monitor {}...",
@@ -363,6 +384,14 @@ async fn connect_and_receive(
                                 }
                             }
                         }
+                    }
+
+                    // Log to disk
+                    if let Some(logger) = disk_logger {
+                        logger
+                            .log_message(event)
+                            .await
+                            .context("unable to log to disk")?
                     }
                 }
             }
