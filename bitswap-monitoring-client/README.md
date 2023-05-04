@@ -16,7 +16,7 @@ This is an example config file, see also the [file](./config.yaml) and the [impl
 # This is a config file for the bitswap-monitoring-client tool.
 
 # Address to listen and serve prometheus metrics on.
-prometheus_address: "0.0.0.0:8080"
+prometheus_address: "0.0.0.0:8088"
 
 # Specifies the path to the MaxMind GeoLite databases.
 # Defaults to /usr/local/share/GeoIP if unspecified.
@@ -27,6 +27,11 @@ prometheus_address: "0.0.0.0:8080"
 # If not provided all traffic will be logged as non-gateway-traffic.
 # Defaults to empty, i.e., no tagging of gateway traffic.
 #gateway_file_path: "/usr/local/share/gateways.txt"
+
+# Specifies a path to a directory to write JSON logs.
+# A subdirectory per monitor will be created.
+# If not provided, logging to disk will be disabled.
+#disk_logging_directory: "traces"
 
 # List of AMQP data sources to connect to.
 amqp_servers:
@@ -40,6 +45,23 @@ amqp_servers:
 The `prometheus_address` specifies the local endpoint to listen and serve Prometheus metrics on.
 For each (`amqp_server`, `monitor_name`) combination, a connection to the AMQP server will be opened.
 
+<<<<<<< Updated upstream
+=======
+### Docker
+
+When running in docker via [../Dockerfile.bitswap-monitoring-client](../Dockerfile.bitswap-monitoring-client),
+the client is started via the [docker-entrypoint.sh](docker-entrypoint.sh) script.
+This looks for the environment variables `PUID` and `PGID`, `chown`s the logging directory, and drops root for the
+given UID and GID.
+
+## To-Disk Logging
+
+If enabled via `disk_logging_directory`, the client writes logs as gzipped JSON files into the configured directory.
+A subdirectory per monitor will be created.
+Log files are rotated hourly.
+The client listens for `SIGINT` and `SIGTERM` to shut down, and finalizes the currently-opened file.
+
+>>>>>>> Stashed changes
 ## Metrics
 
 Metrics are provided via a Prometheus HTTP endpoint.

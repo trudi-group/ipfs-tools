@@ -21,7 +21,7 @@ COPY --from=ipfs-tools-builder /ipfs-tools/target/release/bitswap-monitoring-cli
 COPY --from=ipfs-tools-builder /ipfs-tools/bitswap-monitoring-client/config.yaml ./config/bitswap-monitoring-client-config.yaml
 
 # Set ownership.
-RUN chown -R ipfs:ipfs ./bitswap-monitoring-client
+RUN chown -R ipfs:ipfs ./
 
 # Set log level.
 ENV RUST_LOG=info
@@ -30,7 +30,7 @@ ENV RUST_LOG=info
 EXPOSE 8088
 
 # Drop root.
-USER ipfs
+#USER ipfs
 
 # Run the binary.
 ENTRYPOINT ["./bitswap-monitoring-client","--config","./config/bitswap-monitoring-client-config.yaml"]
