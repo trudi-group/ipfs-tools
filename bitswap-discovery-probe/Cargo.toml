@@ -18,7 +18,7 @@ prometheus_exporter = "0.8.4"
 prometheus = { version = "0.13", features = ["process"] }
 lazy_static = "1.4.0"
 serde = "1.0.160"
-serde_yaml = "0.9.17"
+serde_yaml = "0.9.21"
 clap = "2.33.3"
 cid = "0.10.1"
 waitgroup = "0.1.2"
