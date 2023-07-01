@@ -25,7 +25,7 @@ clap = "2.33.3"
 maxminddb = "0.23.0"
 
 # Multiaddress parser.
-multiaddr = "0.17"
+multiaddr = "0.18"
 
 # ISO 3166-1 countries.
 celes = "2.4.0"
