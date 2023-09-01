@@ -8,7 +8,7 @@ edition = "2021"
 ipfs-resolver-common = { path = "../common" }
 ipfs_monitoring_plugin_client = { path = "../ipfs-monitoring-plugin-client" }
 tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread","time", "macros"] }
-log = "0.4.14"
+log = "0.4.20"
 flexi_logger = "0.25.5"
 failure = "0.1.8"
 futures-util = "0.3.28"
