@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 ipfs-resolver-common = {path="../common"}
 failure = "0.1.7"
-log = "0.4.8"
+log = "0.4.20"
 dotenv = "0.15.0"
 flexi_logger = "0.25.5"
 cid = "0.10.1"
