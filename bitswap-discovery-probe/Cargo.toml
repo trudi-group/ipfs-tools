@@ -17,7 +17,7 @@ prometheus_exporter = "0.8.4"
 # This needs to be matching the version prometheus_exporter uses!
 prometheus = { version = "0.13", features = ["process"] }
 lazy_static = "1.4.0"
-serde = "1.0.190"
+serde = "1.0.194"
 serde_yaml = "0.9.25"
 clap = "2.33.3"
 cid = "0.11.0"
