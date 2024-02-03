@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 ipfs-resolver-common = { path = "../common" }
 ipfs_monitoring_plugin_client = { path = "../ipfs-monitoring-plugin-client" }
-tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread", "time", "macros", "signal", "fs"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "rt-multi-thread", "time", "macros", "signal", "fs", "io-util"] }
 log = "0.4.20"
 flexi_logger = "0.27.3"
 failure = "0.1.8"
@@ -29,3 +29,7 @@ multiaddr = "0.17"
 
 # ISO 3166-1 countries.
 celes = "2.4.0"
+
+# Logging to file
+async-compression = { version = "0.3.15" , default-features = false, features=["tokio","gzip"]}
+serde_json = "1.0.96"

@@ -23,6 +23,11 @@ pub(crate) struct Config {
     /// Each line in the file should contain one peer ID.
     /// If not provided, all traffic will be logged as non-gateway traffic.
     pub(crate) gateway_file_path: Option<String>,
+
+    /// Specifies a path to a directory to write bitswap traces to.
+    /// A subdirectory per monitor will be created.
+    /// If not provided, logging to disk will be disabled.
+    pub(crate) disk_logging_directory: Option<String>,
 }
 
 /// Configuration for a single data source.
