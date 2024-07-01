@@ -11,7 +11,7 @@ ipfs-resolver-common = {path = "../common"}
 ipfs_monitoring_plugin_client = {path = "../ipfs-monitoring-plugin-client" }
 failure = "0.1.7"
 log = "0.4.21"
-flexi_logger = "0.28.0"
+flexi_logger = "0.28.5"
 futures-util = "0.3.29"
 reqwest = { version = "0.11", features = ["json","rustls-tls-native-roots"],default-features = false }
 multibase = "0.9.1"
