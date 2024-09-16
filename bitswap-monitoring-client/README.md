@@ -45,8 +45,6 @@ amqp_servers:
 The `prometheus_address` specifies the local endpoint to listen and serve Prometheus metrics on.
 For each (`amqp_server`, `monitor_name`) combination, a connection to the AMQP server will be opened.
 
-<<<<<<< Updated upstream
-=======
 ### Docker
 
 When running in docker via [../Dockerfile.bitswap-monitoring-client](../Dockerfile.bitswap-monitoring-client),
@@ -61,7 +59,6 @@ A subdirectory per monitor will be created.
 Log files are rotated hourly.
 The client listens for `SIGINT` and `SIGTERM` to shut down, and finalizes the currently-opened file.
 
->>>>>>> Stashed changes
 ## Metrics
 
 Metrics are provided via a Prometheus HTTP endpoint.
