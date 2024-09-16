@@ -1,17 +1,45 @@
 # Implements an image to run the bitswap-monitoring-client tool.
 # This will expose port 8088 for prometheus.
-# The executable is placed in /, the config in /config/.
+# The executable is placed in /ipfs-tools, the config in /ipfs-tools/config/.
 # The config is copied from the builder stage (and thus verbose from the sources).
-# You can probably overwrite it by mounting your own config directory, I guess.
+# You can override it by mounting your own.
+
+# First build su-exec
+FROM ubuntu:jammy AS builder
+
+RUN apt-get update && apt-get install -y \
+  curl \
+  build-essential \
+  git \
+  wget
+
+# Get su-exec, a very minimal tool for dropping privileges.
+ENV SUEXEC_VERSION=v0.2
+RUN set -eux; \
+    dpkgArch="$(dpkg --print-architecture)"; \
+    case "${dpkgArch##*-}" in \
+        "amd64" | "armhf" | "arm64") tiniArch="tini-static-$dpkgArch" ;;\
+        *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac; \
+  cd /tmp \
+  && git clone https://github.com/ncopa/su-exec.git \
+  && cd su-exec \
+  && git checkout -q $SUEXEC_VERSION \
+  && make su-exec-static
+
+# Get yq
+ENV YQ_VERSION=v4.44.3
+RUN set -eux; \
+    dpkgArch="$(dpkg --print-architecture)"; \
+    case "${dpkgArch##*-}" in \
+        "amd64" | "arm" | "armhf" | "arm64") tiniArch="tini-static-$dpkgArch" ;;\
+        *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac; \
+    wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${dpkgArch} -O /usr/bin/yq &&\
+    chmod +x /usr/bin/yq
 
 # Get some small base image to run things on.
 FROM ubuntu:jammy AS runtime
-
-# Create a system user to drop into.
-# This will get some small (<1000) UID and GID, which is fine since we don't write to any files on the host.
-RUN groupadd -r ipfs \
-  && useradd --no-log-init -r -g ipfs ipfs \
-  && mkdir -p ipfs
 
 # Enter our working directory.
 WORKDIR ipfs-tools
@@ -19,9 +47,12 @@ WORKDIR ipfs-tools
 # Copy compiled binaries from builder.
 COPY --from=ipfs-tools-builder /ipfs-tools/target/release/bitswap-monitoring-client .
 COPY --from=ipfs-tools-builder /ipfs-tools/bitswap-monitoring-client/config.yaml ./config/bitswap-monitoring-client-config.yaml
+COPY --from=ipfs-tools-builder /ipfs-tools/bitswap-monitoring-client/docker-entrypoint.sh .
+COPY --from=0 /tmp/su-exec/su-exec-static /sbin/su-exec
+COPY --from=0 /usr/bin/yq /usr/bin/yq
 
-# Set ownership.
-RUN chown -R ipfs:ipfs ./bitswap-monitoring-client
+# Make sure our entrypoint is executable.
+RUN chmod 755 ./docker-entrypoint.sh
 
 # Set log level.
 ENV RUST_LOG=info
@@ -29,8 +60,6 @@ ENV RUST_LOG=info
 # Expose Prometheus endpoint.
 EXPOSE 8088
 
-# Drop root.
-USER ipfs
-
-# Run the binary.
-ENTRYPOINT ["./bitswap-monitoring-client","--config","./config/bitswap-monitoring-client-config.yaml"]
+# Run the script.
+# This will fix permissions on the temporary file storage directory, drop root, and then run the binary.
+ENTRYPOINT ["./docker-entrypoint.sh"]
