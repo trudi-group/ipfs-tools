@@ -36,7 +36,7 @@ impl ToDiskLogger {
         fs::create_dir_all(&target_dir).context("unable to create logging directory")?;
 
         // Create initial output file
-        let out_file = Self::rotate_file(None, &target_dir)
+        let (out_file, out_path) = Self::rotate_file(None, &target_dir)
             .await
             .context("unable to create output file")?;
 
@@ -58,6 +58,7 @@ impl ToDiskLogger {
             last_error.clone(),
             recv_json,
             out_file,
+            out_path,
         ));
 
         let logger = ToDiskLogger {
@@ -113,9 +114,23 @@ impl ToDiskLogger {
         debug!("{} json encode: exiting", monitor_name);
     }
 
-    async fn finalize_file(mut f: BufWriter<GzipEncoder<File>>) -> Result<()> {
-        f.flush().await.context("unable to flush buffer")?;
-        f.shutdown().await.context("unable to write trailer")?;
+    async fn finalize_file(
+        mut w: BufWriter<GzipEncoder<File>>,
+        current_file_path: PathBuf,
+    ) -> Result<()> {
+        w.flush().await.context("unable to flush buffer")?;
+        w.shutdown().await.context("unable to write trailer")?;
+
+        let mut f = w.into_inner().into_inner();
+        f.flush().await.context("unable to flush file data")?;
+        f.sync_all().await.context("unable to sync file to disk")?;
+        drop(f);
+
+        let tmp_path = current_file_path.with_extension("gz.tmp");
+        tokio::fs::rename(&tmp_path, &current_file_path)
+            .await
+            .context("unable to rename temporary file")?;
+
         Ok(())
     }
 
@@ -143,11 +158,11 @@ impl ToDiskLogger {
     }
 
     async fn rotate_file(
-        old_file: Option<BufWriter<GzipEncoder<File>>>,
+        old_file: Option<(BufWriter<GzipEncoder<File>>, PathBuf)>,
         target_dir: &PathBuf,
-    ) -> Result<BufWriter<GzipEncoder<File>>> {
-        if let Some(f) = old_file {
-            Self::finalize_file(f)
+    ) -> Result<(BufWriter<GzipEncoder<File>>, PathBuf)> {
+        if let Some((f, p)) = old_file {
+            Self::finalize_file(f, p)
                 .await
                 .context("unable to finalize previous file")?;
         }
@@ -168,11 +183,13 @@ impl ToDiskLogger {
         };
 
         debug!("creating new log file at {:?}", fp);
-        let out_file = File::create(fp)
+        let temp_path = fp.with_extension("gz.tmp");
+        let plain_path = fp;
+        let out_file = File::create(temp_path)
             .await
-            .context("unable to bitswap logging file")?;
+            .context("unable to create bitswap logging file")?;
 
-        Ok(BufWriter::new(GzipEncoder::new(out_file)))
+        Ok((BufWriter::new(GzipEncoder::new(out_file)), plain_path))
     }
 
     async fn write_to_file(
@@ -181,8 +198,10 @@ impl ToDiskLogger {
         error_storage: Arc<Mutex<Option<Error>>>,
         mut input: Receiver<Vec<u8>>,
         file: BufWriter<GzipEncoder<File>>,
+        path: PathBuf,
     ) {
         let mut current_file = file;
+        let mut current_path = path;
         let newline = "\n".as_bytes();
 
         // Create a ticker to rotate the output file every hour.
@@ -198,7 +217,7 @@ impl ToDiskLogger {
                             // Sender closed, we're shutting down (or something went wrong).
                             debug!("{} write: sender closed, exiting",monitor_name);
                             // Don't forget to flush and finalize.
-                            if let Err(e) = Self::finalize_file(current_file).await {
+                            if let Err(e) = Self::finalize_file(current_file,current_path).await {
                                 error!("{} write: unable to finalize output file: {:?}",monitor_name,e);
                                 let mut last_err = error_storage.lock().await;
                                 *last_err = Some(e.context("unable to finalize output file").into());
@@ -227,7 +246,7 @@ impl ToDiskLogger {
                 _ = rotation_ticker.tick() => {
                     // Rotate the file
                     debug!("{} write: rotating output file",monitor_name);
-                    current_file = match Self::rotate_file(Some(current_file),&target_dir).await {
+                    (current_file,current_path) = match Self::rotate_file(Some((current_file,current_path)),&target_dir).await {
                         Ok(f) => f,
                         Err(e) => {
                             error!("{} write: unable to rotate bitswap log file: {:?}",monitor_name,e);

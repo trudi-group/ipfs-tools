@@ -55,8 +55,9 @@ given UID and GID.
 ## To-Disk Logging
 
 If enabled via `disk_logging_directory`, the client writes logs as gzipped JSON files into the configured directory.
-A subdirectory per monitor will be created.
-Log files are rotated hourly.
+A subdirectory per monitor will be created, log files are rotated hourly.
+While being written to, the files are named `<timestamp>.json.gz.tmp`.
+Once rotated or on shutdown, files are renamed to `<timestamp>.json.gz`.
 The client listens for `SIGINT` and `SIGTERM` to shut down, and finalizes the currently-opened file.
 
 ## Metrics
