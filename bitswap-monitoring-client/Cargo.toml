@@ -11,7 +11,7 @@ tokio = { version = "^1.41", features = ["rt", "net", "sync", "rt-multi-thread",
 log = "0.4.21"
 flexi_logger = "0.28.5"
 failure = "0.1.8"
-futures-util = "0.3.29"
+futures-util = "0.3.31"
 tokio-util = "0.7.12"
 futures = "0.3.30"
 chrono = { version = "0.4.31", features = ["serde"] }
