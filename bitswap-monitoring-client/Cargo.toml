@@ -30,7 +30,7 @@ maxminddb = "0.24.0"
 multiaddr = "0.17"
 
 # ISO 3166-1 countries.
-celes = "2.4.0"
+celes = "2.5.0"
 
 # Logging to file
 async-compression = { version = "0.3.15" , default-features = false, features=["tokio","gzip"]}
