@@ -34,4 +34,4 @@ celes = "2.5.0"
 
 # Logging to file
 async-compression = { version = "0.3.15" , default-features = false, features=["tokio","gzip"]}
-serde_json = "1.0.96"
+serde_json = "1.0.134"
