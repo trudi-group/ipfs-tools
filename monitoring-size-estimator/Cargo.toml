@@ -12,7 +12,7 @@ log = "0.4.21"
 flexi_logger = "0.29.8"
 failure = "0.1.8"
 futures-util = "0.3.31"
-chrono = { version = "0.4.31", features = ["serde"] }
+chrono = { version = "0.4.40", features = ["serde"] }
 prometheus_exporter = "0.8.4"
 # This needs to be matching the version prometheus_exporter uses!
 prometheus = { version = "0.13", features = ["process"] }

@@ -14,7 +14,7 @@ failure = "0.1.8"
 futures-util = "0.3.31"
 tokio-util = "0.7.13"
 futures = "0.3.30"
-chrono = { version = "0.4.31", features = ["serde"] }
+chrono = { version = "0.4.40", features = ["serde"] }
 prometheus_exporter = "0.8.4"
 # This needs to be matching the version prometheus_exporter uses!
 prometheus = { version = "0.13", features = ["process"] }
