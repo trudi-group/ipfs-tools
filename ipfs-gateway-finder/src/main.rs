@@ -121,7 +121,7 @@ async fn do_probing() -> Result<()> {
                 .long("gateway-list")
                 .value_name("URL")
                 .help("The URL of the JSON gateway list to use. Supported schemes are http, https, and file for local data")
-                .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/master/src/gateways.json")
+                .default_value("https://raw.githubusercontent.com/ipfs/public-gateway-checker/main/gateways.json")
                 .takes_value(true),
         )
         .arg(
@@ -141,11 +141,14 @@ async fn do_probing() -> Result<()> {
 
     let monitor_api_address = matches.value_of("monitor_api_address").unwrap();
     info!("using monitoring node API at {}", monitor_api_address);
-    let u = http::uri::Builder::new()
-        .scheme(http::uri::Scheme::HTTP)
-        .authority(monitor_api_address)
-        .path_and_query("/")
-        .build()
+    
+    let monitor_api_address = if monitor_api_address.starts_with("http://") {
+        monitor_api_address.to_string()
+    } else {
+        format!("http://{}", monitor_api_address)
+    };
+    
+    let u = monitor_api_address.parse::<http::Uri>()
         .context("invalid monitor_api_address")?;
     let ipfs_client = IpfsClient::from_str(u.to_string().as_str())?;
 
@@ -178,7 +181,7 @@ async fn do_probing() -> Result<()> {
         "getting list of gateways from {}...",
         gateway_list_url.as_str()
     );
-    let gateway_list: Vec<String> = match gateway_list_url.scheme() {
+    let mut gateway_list: Vec<String> = match gateway_list_url.scheme() {
         "file" => {
             let f = File::open(gateway_list_url.path()).context("unable to open file")?;
             serde_json::from_reader(f).context("unable to deserialize gateway list")?
@@ -199,6 +202,18 @@ async fn do_probing() -> Result<()> {
             )))
         }
     };
+
+    gateway_list = gateway_list
+        .into_iter()
+        .map(|gateway| {
+            if gateway.starts_with("http://") || gateway.starts_with("https://") {
+                gateway
+            } else {
+                format!("https://{}", gateway)
+            }
+        })
+        .collect();
+
     info!("loaded {} gateways", gateway_list.len());
     debug!("got gateways: {:?}", gateway_list);
 
@@ -554,8 +569,11 @@ async fn probe_gateway(
     num_tries: u32,
     timeout: Duration,
 ) -> Result<()> {
-    let mut url = Url::parse(gateway_url.replace(":hash", &cid).as_str())?;
+    let formatted_url = format!("{}/ipfs/{}", gateway_url, cid);
+    let mut url = Url::parse(&formatted_url)?;
     url.set_fragment(Some("x-ipfs-companion-no-redirect"));
+    debug!("constructed URL: {}", url);
+    
     let mut last_err = None;
     // We use this to keep track of additional backoff timers.
     // Specifically, if we get a response, but the wrong one, we assume something like an HTTP
